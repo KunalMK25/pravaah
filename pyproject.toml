@@ -3,16 +3,16 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "flood-risk-zonation"
-version = "0.1.0"
-description = "ML-powered geospatial web app for micro-level flood risk zone mapping"
+name = "pravaah"
+version = "1.0.0"
+description = "PRAVAAH: AI-powered geospatial decision support for hazard red zones, vulnerable habitation intelligence, carrying capacity, and relocation prioritisation"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
-    { name = "Kunal MK" }
+    { name = "PRAVAAH Team" }
 ]
-keywords = ["flood", "risk", "gis", "geospatial", "machine-learning", "streamlit"]
+keywords = ["flood", "hazard", "gis", "geospatial", "machine-learning", "streamlit", "decision-support", "habitation"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -37,6 +37,7 @@ dependencies = [
     "reportlab>=4.0",
     "requests>=2.31",
     "tenacity>=8.2",
+    "shap>=0.44",
 ]
 
 [project.optional-dependencies]
@@ -47,9 +48,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/KunalMK25/flood-risk-zonation"
-"Live Demo" = "https://flood-risk-zonation-ezw8ngm5igpy6egpdmgsqw.streamlit.app/"
-"Bug Tracker" = "https://github.com/KunalMK25/flood-risk-zonation/issues"
+Homepage = "https://github.com/KunalMK25/pravaah"
+Repository = "https://github.com/KunalMK25/pravaah"
 
 [tool.setuptools.packages.find]
 where = ["."]
