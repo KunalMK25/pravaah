@@ -1,4 +1,4 @@
-"""PRAVAAH — agentic decision-support layer."""
+"""PRAVAAH-AI — agentic decision-support layer."""
 from flood_risk_zonation.agents.orchestrator import PravaahOrchestrator
 from flood_risk_zonation.agents.tools import (
     get_hazard_details,

@@ -1,5 +1,5 @@
 """
-PRAVAAH — Habitation-level exposure analysis.
+PRAVAAH-AI — Habitation-level exposure analysis.
 
 HAZARD vs EXPOSURE:
   Hazard   = "how dangerous is this location?" (grid cell scores from Phase 1)

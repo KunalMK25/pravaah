@@ -1,5 +1,5 @@
 """
-PRAVAAH — Habitation / settlement ingestion from OpenStreetMap.
+PRAVAAH-AI — Habitation / settlement ingestion from OpenStreetMap.
 
 Fetches settlement nodes (place=city/town/village/hamlet/suburb/neighbourhood/
 locality/isolated_dwelling/farm) from Overpass API for any bounding box worldwide.

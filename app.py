@@ -1,5 +1,5 @@
 """
-PRAVAAH — Predictive Risk & Vulnerability Assessment for At-Risk Habitations
+PRAVAAH-AI — Predictive Risk & Vulnerability Assessment for At-Risk Habitations
 Full intelligence system: hazard + spatial zones + habitation intelligence
 + live weather + forecast + historical validation + scenarios + SHAP + agentic AI.
 Run with: streamlit run app.py
@@ -22,12 +22,12 @@ from flood_risk_zonation.visualization.map_builder import FloodRiskMapBuilder
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-st.set_page_config(page_title="PRAVAAH \u2014 Hazard & Habitation Intelligence",
+st.set_page_config(page_title="PRAVAAH-AI — Hazard & Habitation Intelligence",
                    page_icon="\U0001f30a", layout="wide")
 
 # ── Sidebar ─────────────────────────────────────────────────────────────────
-st.sidebar.title("\U0001f30a PRAVAAH")
-st.sidebar.caption("Predictive Risk & Vulnerability Assessment for At-Risk Habitations")
+st.st.sidebar.title("\U0001f30a PRAVAAH-AI")
+st.sidebar.caption("Predictive Risk & Vulnerability Assessment for At-Risk Habitations (PRAVAAH-AI)")
 st.sidebar.markdown("---")
 
 PRESET_REGIONS = {
@@ -104,7 +104,7 @@ if not use_offline:
         st.sidebar.caption(f"{'✅' if _ok else '⚠️'} {_w:.1f} km × {_h:.1f} km")
 
 # ── Main panel ───────────────────────────────────────────────────────────────
-st.title("\U0001f30a PRAVAAH")
+st.title("\U0001f30a PRAVAAH-AI")
 st.markdown("**Predictive Risk & Vulnerability Assessment for At-Risk Habitations**  \n"
             "*Hazard ML · Spatial Zones · Habitation Intelligence · Live Weather · Forecasting · What-If Scenarios · Agentic AI*")
 st.markdown("---")
@@ -132,7 +132,7 @@ if run_button:
             err = validate_bbox_size(bbox)
             if err: st.error(f"📐 {err}"); st.stop()
         pipeline = FloodRiskPipeline(config)
-        with st.status("Running PRAVAAH analysis…", expanded=True) as status:
+        with st.status("Running PRAVAAH-AI analysis…", expanded=True) as status:
             p = st.write
             if use_offline and offline_region:
                 p("📦 Loading offline data…")
@@ -201,7 +201,7 @@ if run_button:
                 except Exception as vae:
                     p(f"\U0001f4da Validation failed: {vae}")
 
-            status.update(label="✅ PRAVAAH complete", state="complete", expanded=False)
+            status.update(label="✅ PRAVAAH-AI complete", state="complete", expanded=False)
 
         st.session_state.update({"result":result,"sih_result":sih_result,"full_result":full_result,
                                  "weather_data":weather_data,"forecast_result":forecast_result,
@@ -673,9 +673,9 @@ with tab_data:
         d1,d2,d3,d4=st.columns(4)
         with d1:
             cb2=io.StringIO(); dff.to_csv(cb2,index=False)
-            st.download_button("⬇️ Hazard CSV",cb2.getvalue(),file_name="PRAVAAH_Hazard_Grid.csv",mime="text/csv")
+            st.download_button("⬇️ Hazard CSV",cb2.getvalue(),file_name="PRAVAAH-AI_Hazard_Grid.csv",mime="text/csv")
         with d2:
-            st.download_button("⬇️ Hazard GeoJSON",result.scored_grid.to_json(),file_name="PRAVAAH_Hazard_Map.geojson",mime="application/json")
+            st.download_button("⬇️ Hazard GeoJSON",result.scored_grid.to_json(),file_name="PRAVAAH-AI_Hazard_Map.geojson",mime="application/json")
         if sih_result and sih_result.relocation_results:
             with d3:
                 re=[]
@@ -694,7 +694,7 @@ with tab_data:
                         "recommended_action":rel.recommended_action,"contributing_factors":" | ".join(rel.contributing_factors),
                         "num_candidates":len(full_result.relocation_candidates.get(rel.hab_id,[])) if full_result else 0})
                 hc=io.StringIO(); pd.DataFrame(re).to_csv(hc,index=False)
-                st.download_button("⬇️ Relocation CSV",hc.getvalue(),file_name="PRAVAAH_Relocation_Priority.csv",mime="text/csv")
+                st.download_button("⬇️ Relocation CSV",hc.getvalue(),file_name="PRAVAAH-AI_Relocation_Priority.csv",mime="text/csv")
         with d4:
             if st.button("📄 Generate PDF"):
                 with st.spinner("Generating report…"):
@@ -705,7 +705,7 @@ with tab_data:
                         with tempfile.TemporaryDirectory() as td:
                             pp=export_pdf_report(result,Path(td)/"PRAVAAH_Risk_Assessment.pdf",area_name=area_name,data_tier=result.data_tier,sih_result=sih_result)
                             pb=Path(pp).read_bytes()
-                        st.download_button("⬇️ Download PDF",pb,file_name="PRAVAAH_Risk_Assessment.pdf",mime="application/pdf")
+                        st.download_button("⬇️ Download PDF",pb,file_name="PRAVAAH-AI_Risk_Assessment.pdf",mime="application/pdf")
                         st.success("Report generated.")
                     except Exception as e: st.error(f"Report failed: {e}")
     else: st.info("Run the analysis first.")
@@ -713,7 +713,7 @@ with tab_data:
 # ── Tab 12: Methodology ──────────────────────────────────────────────────────
 with tab_meth:
     st.markdown("""
-## PRAVAAH — Complete System Methodology
+## PRAVAAH-AI — Complete System Methodology
 
 ### Core Decision Chain
 ```

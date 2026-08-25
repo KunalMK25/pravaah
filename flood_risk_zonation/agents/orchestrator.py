@@ -1,5 +1,5 @@
 """
-PRAVAAH — Agent Orchestrator.
+PRAVAAH-AI — Agent Orchestrator.
 
 The orchestrator controls the agentic decision-support workflow.  It:
   1. Receives a habitation ID and the full FullSIHResult context.

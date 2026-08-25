@@ -1,5 +1,5 @@
 """
-PRAVAAH — What-If Scenario Engine.
+PRAVAAH-AI — What-If Scenario Engine.
 
 DESIGN PRINCIPLE — BASELINE ISOLATION:
   A scenario NEVER modifies the baseline FloodRiskResult or SIHAnalysisResult.

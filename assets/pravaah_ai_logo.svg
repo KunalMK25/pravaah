@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 80" width="340" height="80" role="img" aria-label="PRAVAAH-AI logo">
+  <title>PRAVAAH-AI</title>
+  <defs>
+    <!-- Water / hazard wave gradient -->
+    <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#1a5276"/>
+      <stop offset="50%"  stop-color="#2471a3"/>
+      <stop offset="100%" stop-color="#c0392b"/>
+    </linearGradient>
+    <!-- Glow for the AI spark -->
+    <radialGradient id="sparkGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#e74c3c" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#c0392b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ── Icon block (left) ──────────────────────────────────────────────── -->
+  <!-- Outer circle — hazard ring -->
+  <circle cx="40" cy="40" r="34" fill="none" stroke="url(#waveGrad)" stroke-width="3" opacity="0.85"/>
+
+  <!-- Water wave layer 1 (blue) -->
+  <path d="M10 46 Q20 38 30 46 Q40 54 50 46 Q60 38 70 46"
+        fill="none" stroke="#2471a3" stroke-width="3" stroke-linecap="round"/>
+  <!-- Water wave layer 2 (lighter, offset) -->
+  <path d="M10 52 Q20 44 30 52 Q40 60 50 52 Q60 44 70 52"
+        fill="none" stroke="#5dade2" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- Hazard location pin (red) -->
+  <path d="M40 10 C33 10 27 16 27 23 C27 32 40 44 40 44 C40 44 53 32 53 23 C53 16 47 10 40 10 Z"
+        fill="#c0392b" opacity="0.9"/>
+  <circle cx="40" cy="23" r="5" fill="white" opacity="0.95"/>
+
+  <!-- AI spark / neural node -->
+  <circle cx="40" cy="23" r="8" fill="url(#sparkGrad)"/>
+
+  <!-- ── Text block (right) ─────────────────────────────────────────────── -->
+  <!-- Primary name -->
+  <text x="86" y="36"
+        font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="26" font-weight="700" letter-spacing="1"
+        fill="#1a252f">PRAVAAH</text>
+  <text x="262" y="36"
+        font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="26" font-weight="700" letter-spacing="1"
+        fill="#c0392b">-AI</text>
+
+  <!-- Subtitle -->
+  <text x="86" y="54"
+        font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="10" font-weight="400" letter-spacing="0.3"
+        fill="#5d6d7e">Predictive Risk &amp; Vulnerability Assessment</text>
+  <text x="86" y="67"
+        font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="10" font-weight="400" letter-spacing="0.3"
+        fill="#5d6d7e">for At-Risk Habitations</text>
+
+  <!-- Thin separator line under title -->
+  <line x1="86" y1="40" x2="320" y2="40" stroke="url(#waveGrad)" stroke-width="1.5" opacity="0.4"/>
+</svg>

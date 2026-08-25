@@ -1,5 +1,5 @@
 """
-PRAVAAH — Carrying-capacity assessment.
+PRAVAAH-AI — Carrying-capacity assessment.
 
 METHODOLOGY (declared, transparent, no black-box AI):
 

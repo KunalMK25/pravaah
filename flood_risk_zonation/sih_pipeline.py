@@ -1,5 +1,5 @@
 """
-PRAVAAH — Habitation Intelligence Pipeline Orchestrator.
+PRAVAAH-AI — Habitation Intelligence Pipeline Orchestrator.
 
 Extends the hazard analysis engine with the full habitation intelligence layer:
 settlement ingestion → exposure analysis → vulnerability assessment →

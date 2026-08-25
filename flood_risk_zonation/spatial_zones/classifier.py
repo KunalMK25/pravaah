@@ -1,5 +1,5 @@
 """
-PRAVAAH — Spatial Red / Yellow / Green Zone Classifier.
+PRAVAAH-AI — Spatial Red / Yellow / Green Zone Classifier.
 
 METHODOLOGY (declared, transparent):
 ────────────────────────────────────────────────────────────────────────────

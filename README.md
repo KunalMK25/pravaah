@@ -1,58 +1,59 @@
-# PRAVAAH
+<div align="center">
+  <img src="assets/pravaah_ai_logo.svg" alt="PRAVAAH-AI Logo" width="340"/>
+</div>
+
+# PRAVAAH-AI
 
 ## Predictive Risk & Vulnerability Assessment for At-Risk Habitations
 
-PRAVAAH is an AI-powered geospatial decision-support system that identifies hazard-based
-red zones, evaluates vulnerable habitations, assesses exposure and carrying-capacity
-stress, and prioritises intervention or relocation using explainable spatial intelligence.
+[![Tests](https://github.com/KunalMK25/pravaah/actions/workflows/test.yml/badge.svg)](https://github.com/KunalMK25/pravaah/actions/workflows/test.yml)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Tests](https://img.shields.io/badge/tests-509%20passing-brightgreen)
+
+**PRAVAAH-AI** is an AI-powered geospatial decision-support system that identifies hazard-based red zones, evaluates vulnerable habitations, assesses exposure and carrying-capacity stress, and prioritises intervention or relocation using explainable spatial intelligence.
 
 The system answers a single operational question:
 
 > **"Which vulnerable habitations need attention, and why?"**
 
-[![Tests](https://github.com/pravaah/pravaah/actions/workflows/test.yml/badge.svg)](https://github.com/pravaah/pravaah/actions)
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
-
 ---
 
 ## Problem
 
-Communities in flood-prone areas face a recurring challenge: hazard maps exist, but
-they do not answer which specific settlements are at risk, how many people are exposed,
-whether the area has the capacity to absorb displaced residents, or which habitations
-require immediate relocation rather than routine monitoring.
+Communities in flood-prone areas face a recurring challenge: hazard maps exist, but they do not answer which specific settlements are at risk, how many people are exposed, whether the area has the capacity to absorb displaced residents, or which habitations require immediate relocation rather than routine monitoring.
 
-PRAVAAH bridges that gap by layering habitation intelligence on top of a geospatial
-hazard foundation, producing ranked, explainable relocation priorities for every
-identified settlement in the study area.
+PRAVAAH-AI bridges that gap by layering habitation intelligence on top of a geospatial hazard foundation, producing ranked, explainable relocation priorities for every identified settlement in the study area.
 
 ---
 
 ## Solution
 
-PRAVAAH builds upon an existing geospatial risk-assessment foundation and extends it
-with habitation-level exposure, vulnerability, carrying-capacity, and relocation
-intelligence.
+PRAVAAH-AI builds upon a geospatial risk-assessment foundation and extends it with habitation-level exposure, vulnerability, carrying-capacity, relocation intelligence, live weather integration, short-term forecasting, historical validation, and bounded agentic decision support.
 
 ```
 Environmental / Geospatial Data
         ↓
-Hazard Analysis Engine
-  Grid Generation → Feature Engineering → Susceptibility Model → Risk Score → Red Zone
+Hazard Analysis Engine (ML + GIS)
+  Grid · Features · WSI + Ensemble RF · Risk Score · RED/YELLOW/GREEN Zones
         ↓
 Habitation Intelligence Layer
   Settlement Ingestion (OSM)
         ↓
-  Exposure Analysis (spatial overlay)
+  Exposure · Vulnerability · Carrying Capacity · Relocation Priority
         ↓
-  Vulnerability Assessment (weighted indicators)
+Dynamic Intelligence
+  Live Weather → Dynamic Adjustment → 24–72h Forecast
         ↓
-  Carrying Capacity Assessment (safe area + road + healthcare)
+  Historical Flood Validation (independent metrics)
         ↓
-  Relocation Priority (transparent formula + guardrails)
+  What-If Scenario Simulation
         ↓
-  Explainability + Authority Dashboard + PDF Report
+  SHAP ML Explainability
+        ↓
+Agentic Decision Support (9 bounded agents)
+        ↓
+Explainable Recommendations → Authority Dashboard → PDF Report
 ```
 
 ---
@@ -61,17 +62,22 @@ Habitation Intelligence Layer
 
 | Capability | Description |
 |------------|-------------|
-| **Hazard mapping** | Grid-based susceptibility scoring using 10 geospatial factors |
-| **Red zone identification** | High-risk cells highlighted as explicit red zones |
-| **Settlement ingestion** | Habitations sourced live from OpenStreetMap |
-| **Exposure analysis** | Each settlement spatially overlaid against the hazard grid |
-| **Vulnerability scoring** | Transparent 7-component weighted index, all weights declared |
-| **Carrying capacity** | Safe area, road accessibility, and healthcare proximity |
+| **Hazard mapping** | Grid-based susceptibility (WSI + Random Forest + Ensemble, 10 geospatial factors) |
+| **RED/YELLOW/GREEN zones** | Operational spatial zones derived from ML output via 8-neighbour adjacency |
+| **Settlement ingestion** | Live OpenStreetMap habitation nodes (city/town/village/hamlet/suburb) |
+| **Exposure analysis** | Each settlement overlaid against the hazard grid; population from OSM tags |
+| **Vulnerability scoring** | Transparent 7-component weighted index (all weights declared) |
+| **Carrying capacity** | Safe area, road accessibility, healthcare proximity (OSM-sourced) |
 | **Relocation priority** | Formula-driven priority with 4 documented guardrails |
-| **Explainability** | Per-habitation "WHY CRITICAL" narrative with component breakdown |
-| **Authority dashboard** | 7-tab Streamlit interface for decision-makers |
-| **PDF report** | Full risk assessment report with habitation rankings |
-| **Data export** | CSV, GeoJSON, and PDF outputs |
+| **Relocation candidates** | GREEN-zone discovery and scoring for HIGH/CRITICAL habitations |
+| **Live weather** | OpenWeatherMap integration with dynamic risk adjustment |
+| **Short-term forecast** | 24/48/72h rainfall-adjusted risk projection (ESTIMATE) |
+| **Historical validation** | Independent P/R/F1/IoU against documented flood extents |
+| **What-if scenarios** | Rainfall / drainage / population parameter simulation (SIMULATION) |
+| **SHAP explainability** | TreeSHAP per-cell and global importance for the ML hazard model |
+| **Agentic AI** | 9 bounded agents: Hazard, Exposure, Vulnerability, Capacity, Relocation, Weather, Forecast, Scenario, Validation |
+| **Authority dashboard** | 12-tab Streamlit DSS for decision-makers |
+| **PDF report** | Full risk assessment with habitation rankings and relocation priorities |
 
 ---
 
@@ -79,56 +85,24 @@ Habitation Intelligence Layer
 
 ### Hazard Analysis
 
-| Component | Details |
-|-----------|---------|
-| Elevation | NASA SRTM GeoTIFF + OpenTopoData API + synthetic fallback |
-| Water bodies | OSM Overpass API (cached, retry with exponential back-off, fallback) |
-| Rainfall | Synthetic GPM-structured (real GeoTIFF if present) |
-| Grid | Configurable cell size: 250 m / 500 m / 1 km |
-| Features | 10 per-cell conditioning factors (elevation, TWI, slope, aspect, curvature, rainfall mean & max, distance to water, drainage capacity, population density) |
-| Models | Weighted Susceptibility Index (WSI) · Random Forest · Ensemble (default) |
-| Output | Risk score [0–100] and class (High / Medium / Low / Water) per grid cell |
+| Dataset | Source | Provenance |
+|---------|--------|------------|
+| Elevation | NASA SRTM GeoTIFF + OpenTopoData API | `real` / `api` / `synthetic` |
+| Water bodies | OSM Overpass API | `osm_overpass` / `osm_cache` |
+| Rainfall | Synthetic (GPM-structured) | `synthetic` |
+| Habitations | OSM Overpass API (place= nodes) | `osm_overpass` / `osm_cache` / `fallback` |
+| Roads / Healthcare | OSM Overpass API | `osm_overpass` |
+| Weather | OpenWeatherMap | `LIVE` / `CACHED` / `UNAVAILABLE` |
+| Population | OSM `population` tag only | `osm_tag` / `UNKNOWN` |
 
-### Habitation Intelligence
+### Spatial Zone System
 
-| Module | Purpose |
-|--------|---------|
-| `flood_risk_zonation/habitation/ingest.py` | OSM settlement node ingestion |
-| `flood_risk_zonation/exposure/analysis.py` | Spatial overlay, per-habitation hazard class |
-| `flood_risk_zonation/vulnerability/scorer.py` | Transparent weighted vulnerability index |
-| `flood_risk_zonation/capacity/assessment.py` | Safe area, road & healthcare distances |
-| `flood_risk_zonation/relocation/priority.py` | Relocation priority formula + guardrails |
-| `flood_risk_zonation/sih_pipeline.py` | Orchestrates all habitation intelligence stages |
-
----
-
-## Methodology
-
-### Vulnerability Assessment
-
-All weights are declared in source code and visible in the UI — no black-box AI.
-
-| Component | Weight | Direction |
-|-----------|--------|-----------|
-| Hazard severity | 30% | Higher score → more vulnerable |
-| Low elevation | 15% | Lower elevation → more vulnerable |
-| Water proximity | 15% | Closer to water → more vulnerable |
-| Poor drainage | 15% | Lower capacity → more vulnerable |
-| Population exposure | 10% | Known exposed population → more vulnerable |
-| Road accessibility | 10% | Farther road → more vulnerable |
-| Healthcare access | 5% | Farther healthcare → more vulnerable |
-
-Classes: **LOW** (< 0.25) · **MEDIUM** (< 0.50) · **HIGH** (< 0.75) · **CRITICAL** (≥ 0.75)
-
-### Carrying Capacity
-
-| Component | Weight | Measurement |
-|-----------|--------|-------------|
-| Safe area nearby | 45% | Low-risk land within 5 km |
-| Road accessibility | 30% | Distance to nearest primary/secondary road (OSM) |
-| Healthcare access | 25% | Distance to nearest hospital or clinic (OSM) |
-
-Status: **ADEQUATE** (≥ 0.60) · **STRESSED** (≥ 0.35) · **CRITICAL** (< 0.35)
+| Zone | Definition | Source |
+|------|-----------|--------|
+| 🟥 **RED** | Primary hazard zone | ML `risk_class = "High"` |
+| 🟨 **YELLOW** | Secondary attention zone | 8-neighbour adjacent to RED, or Medium class |
+| 🟩 **GREEN** | Lower-risk / potential safe area | Not RED, YELLOW, or Water |
+| 🔵 **WATER** | Permanent water body | `risk_class = "Water"` |
 
 ### Relocation Priority Formula
 
@@ -140,73 +114,44 @@ relocation_score =
   + 0.15 × exposure_component
 ```
 
-**Guardrails (deterministic, documented):**
-- Capacity CRITICAL status → +0.10 score bonus
-- Coastal / tsunami flag → HIGH escalated to CRITICAL
-- Unknown population + non-high hazard → capped at HIGH (precautionary principle)
+Guardrails: capacity CRITICAL +0.10 bonus · coastal → HIGH escalates to CRITICAL · unknown population cap at HIGH.
 
-| Score | Priority | Action |
-|-------|----------|--------|
-| < 0.25 | LOW | Routine monitoring |
-| 0.25 – 0.50 | MEDIUM | Preparedness / alert readiness |
-| 0.50 – 0.75 | HIGH | Priority intervention / evacuation planning |
-| > 0.75 | CRITICAL | Immediate relocation consideration |
+### Agentic Architecture
 
----
+9 bounded agents, each consuming structured PRAVAAH-AI pipeline outputs:
 
-## Data Sources
+| Agent | Responsibility | Invoked for |
+|-------|---------------|------------|
+| HazardAnalyst | Interprets hazard metrics and zone | All priorities |
+| ExposureAnalyst | Population exposure with honest provenance | MEDIUM+ |
+| VulnerabilityAnalyst | Component breakdown | HIGH+ |
+| CapacityAnalyst | Capacity constraints | HIGH+ |
+| RelocationPlanner | Synthesises evidence, recommends candidates | HIGH+ |
+| WeatherAnalyst | Live rainfall and dynamic adjustment | When weather available |
+| ForecastAnalyst | 24–72h risk projections (ESTIMATE label) | When forecast available |
+| ScenarioAnalyst | What-if deltas (SIMULATION label) | When scenario run |
+| ValidationAnalyst | Historical validation metrics | When validation run |
 
-| Dataset | Source | Provenance label |
-|---------|--------|-----------------|
-| Elevation | NASA SRTM (local GeoTIFF) | `real` |
-| Elevation fallback | OpenTopoData API / synthetic | `api` / `synthetic` |
-| Water bodies | OSM Overpass API | `osm_overpass` / `osm_cache` |
-| Habitations | OSM Overpass API (place= nodes) | `osm_overpass` / `osm_cache` / `fallback` |
-| Roads | OSM Overpass API | `osm_overpass` |
-| Healthcare | OSM Overpass API | `osm_overpass` |
-| Rainfall | Synthetic (GPM-structured) | `synthetic` |
-| Population | OSM `population` tag only | `osm_tag` / `UNKNOWN` |
-| Drainage | Synthetic | `synthetic` |
-
-### Scientific Honesty
-
-PRAVAAH is explicit about data quality at every stage:
-
-- Population is labelled **UNKNOWN** when absent from OSM — never fabricated
-- ML metrics are cross-validation on WSI pseudo-labels, not validated against real flood events
-- Shelter capacity is **unavailable** — no curated national dataset is integrated
-- Road and healthcare distances are **straight-line** (Euclidean), not routed — stated limitation
-- All scoring weights are **declared in source code** and displayed in the UI
-- Data tier is always shown: Tier 1 (real) · Tier 2 (partial) · Tier 3 (synthetic)
+LLM invoked for HIGH/CRITICAL only. Deterministic fallback always active. Set `PRAVAAH_LLM_PROVIDER` + key to enable AI explanations.
 
 ---
 
-## Explainability
+## Scientific Honesty
 
-Every habitation receives a full narrative explanation. Example output:
+PRAVAAH-AI is explicit about data quality at every stage:
 
-```
-WHY THIS HABITATION IS CRITICAL
-
-  Hazard score:          82.4/100 → class High
-  Vulnerability score:   0.763 → CRITICAL
-  Capacity score:        0.182 → CRITICAL
-  Population exposed:    UNKNOWN (not in OSM)
-  Safe area nearby:      0.04 km²
-  Nearest road:          4.2 km
-  Nearest healthcare:    not found
-
-Key factors:
-  • High hazard score (82.4/100, class: High)
-  • High vulnerability (CRITICAL, score 0.76)
-  • Very limited nearby safe area (0.04 km² within 5km)
-  • Remote road access (4.2km to major road)
-  • No healthcare facility found in area
-```
+- Population is **UNKNOWN** when absent from OSM — never fabricated
+- ML metrics are cross-validation on WSI pseudo-labels — **not validated against real flood events** (historical validation is independent)
+- Forecasts are always labelled **ESTIMATE** — not deterministic predictions
+- Scenarios are always labelled **SIMULATION** — baseline is never overwritten
+- Relocation candidates are **decision-support recommendations** — not officially designated sites
+- GREEN zones are **lower-risk areas** — not guaranteed safe
+- Shelter capacity is **unavailable** — no curated national dataset integrated
+- Road/healthcare distances are **straight-line** (Euclidean), not routed
 
 ---
 
-## Setup
+## Setup & Running
 
 ### Install dependencies
 
@@ -214,19 +159,53 @@ Key factors:
 pip install -r requirements.txt
 ```
 
-### Run
+### Run locally
 
 ```bash
 streamlit run app.py
 ```
 
+### Configure environment (optional)
+
+```bash
+cp .env.example .env
+# Edit .env — add OPENWEATHER_API_KEY, PRAVAAH_LLM_PROVIDER, etc.
+```
+
 ### Run tests
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q --no-cov
+# Expected: 509 passed, 0 failed
 ```
 
-Expected: **268+ tests passing**.
+---
+
+## Deployment
+
+### Streamlit Community Cloud (recommended)
+
+1. Push to `https://github.com/KunalMK25/pravaah`
+2. Go to [share.streamlit.io](https://share.streamlit.io) → New app
+3. Repository: `KunalMK25/pravaah` · Branch: `main` · File: `app.py`
+4. Add secrets (Settings → Secrets):
+   ```toml
+   OPENWEATHER_API_KEY = "your_key"          # optional
+   PRAVAAH_LLM_PROVIDER = "openai"           # optional
+   OPENAI_API_KEY = "sk-..."                 # if LLM enabled
+   ```
+5. Deploy — `packages.txt` and `requirements.txt` are read automatically
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment instructions.
+
+### Environment Variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `OPENWEATHER_API_KEY` | Optional | Live weather data |
+| `PRAVAAH_LLM_PROVIDER` | Optional | `openai` / `anthropic` / `none` |
+| `OPENAI_API_KEY` | If LLM=openai | OpenAI API key |
+| `ANTHROPIC_API_KEY` | If LLM=anthropic | Anthropic API key |
 
 ---
 
@@ -234,78 +213,48 @@ Expected: **268+ tests passing**.
 
 | File | Description |
 |------|-------------|
-| `PRAVAAH_Hazard_Grid.csv` | Per-cell hazard scores and features |
-| `PRAVAAH_Hazard_Map.geojson` | Full hazard grid as GeoJSON |
-| `PRAVAAH_Relocation_Priority.csv` | Ranked habitation assessment |
-| `PRAVAAH_Risk_Assessment.pdf` | Full structured report |
+| `PRAVAAH-AI_Hazard_Grid.csv` | Per-cell hazard scores and features |
+| `PRAVAAH-AI_Hazard_Map.geojson` | Full hazard grid as GeoJSON |
+| `PRAVAAH-AI_Relocation_Priority.csv` | Ranked habitation assessment |
+| `PRAVAAH-AI_Risk_Assessment.pdf` | Full structured report |
 
 ---
 
-## Deployment
+## Demo Flow (3–5 minutes)
 
-### Streamlit Community Cloud
-
-1. Push the repository to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io) → New app
-3. Set `app.py` as the entry point
-4. No API keys are required for core operation — OSM Overpass is free and unauthenticated
-5. Optional: add `GOOGLE_MAPS_API_KEY` as a secret for Google Maps tile layer
-
-### Environment Variables
-
-| Variable | Purpose | Required |
-|----------|---------|----------|
-| `GOOGLE_MAPS_API_KEY` | Google Maps tiles (optional) | No |
-
-### Memory Notes
-
-- 500 m cells on a 50 km × 50 km area: ~200–400 MB RAM
-- Streamlit Cloud free tier (1 GB) handles typical study areas at 500 m resolution
-- OSM results are cached locally — subsequent runs for the same area are instant
-
----
-
-## Demo Flow
-
-Suggested 3–5 minute walkthrough:
-
-1. Open the app → select **Gottigere, Bangalore** → click **Run Analysis**
-2. **Hazard Map** tab — identify red zones; note habitation markers on the map
-3. Click a red marker — view hazard score, population, priority class
-4. **Habitations** tab — ranked list; filter to CRITICAL
-5. Select a CRITICAL habitation — read the full component breakdown
-6. Expand **Full Explainability Report** — walk through the WHY narrative
-7. **Relocation Priority** tab — priority distribution chart + ranked table
-8. **Data & Export** tab — generate and download the PDF report
-
-Key talking points:
-- "PRAVAAH doesn't just show a risk map — it answers which habitations need to move and why"
-- "Every score uses declared, auditable weights — visible in the Methodology tab"
-- "Population is UNKNOWN when absent — we never fabricate data"
-- "Judges can inspect the exact formula in the source code or Methodology tab"
+1. Open app → select **Gottigere, Bangalore** → click **Run Analysis**
+2. **Hazard Map** tab → RED/YELLOW/GREEN zones + habitation markers
+3. **Spatial Zones** tab → zone distribution + candidate areas
+4. **Habitations** tab → select a CRITICAL habitation → full breakdown
+5. **Relocation Priority** tab → ranked table + priority chart
+6. **Weather** tab → live conditions + dynamic adjustment
+7. **Forecast** tab → 24/48/72h projected zones
+8. **Scenarios** tab → run "+30% Rainfall" → compare with baseline
+9. **AI Support** tab → agent evidence + relocation candidates
+10. **Explainability** tab → SHAP explanation for a high-risk cell
+11. **Data & Export** → download CSV + generate PDF report
 
 ---
 
 ## Known Limitations
 
-1. Drainage capacity is synthetic — real municipal stormwater network data would improve accuracy
-2. Population from OSM is sparse in India — many habitations show UNKNOWN
+1. Drainage capacity is synthetic — real municipal drain data would improve accuracy
+2. Population from OSM is sparse for many Indian settlements — many show UNKNOWN
 3. Road and healthcare distances are straight-line only — routing would be more accurate
-4. No temporal forecasting — hazard assessment reflects current static conditions
-5. Habitation completeness depends on OSM mapping quality for the study area
-6. Hazard model metrics are cross-validation on WSI pseudo-labels, not calibrated against real events
-7. Shelter capacity is unavailable — no curated national shelter dataset is integrated
+4. Forecast is a rainfall-adjusted estimate — not a physically-based hydrological model
+5. Historical validation uses coarse approximate polygons (~1 km accuracy)
+6. Habitation completeness depends on OSM mapping quality for the study area
+7. Sentinel-1 satellite integration: architecture hook exists, not yet automated
 
 ---
 
 ## Future Scope
 
-- Integration of authoritative population raster (WorldPop or Census ward data)
+- Authoritative population raster integration (WorldPop / Census ward data)
 - Road routing for realistic evacuation time estimates
-- Temporal forecasting using forecast rainfall and current susceptibility baseline
-- Historical flood-event validation against satellite-derived inundation extents
 - Sentinel-1 flood extent comparison layer
-- What-if scenario simulation (rainfall +20 %, reduced drainage capacity, etc.)
+- Full hydrological forecast model (once temporal training data available)
+- What-if scenarios integrated into agent decision workflow
 
 ---
 
@@ -313,36 +262,40 @@ Key talking points:
 
 ```
 pravaah/
-├── app.py                          # Streamlit entry point
-├── requirements.txt
-├── flood_risk_zonation/            # Core analysis package
-│   ├── config.py                   # BoundingBox, PipelineConfig
-│   ├── pipeline.py                 # Hazard analysis pipeline
-│   ├── sih_pipeline.py             # Habitation intelligence pipeline
-│   ├── models.py                   # Typed data model dataclasses
-│   ├── exceptions.py               # Exception hierarchy
-│   ├── habitation/                 # Settlement ingestion
-│   ├── exposure/                   # Exposure analysis
-│   ├── vulnerability/              # Vulnerability scoring
-│   ├── capacity/                   # Carrying capacity assessment
-│   ├── relocation/                 # Relocation priority
-│   ├── features/                   # Geospatial feature extraction
-│   ├── grid/                       # Grid generation
-│   ├── ingest/                     # Data ingestion (elevation, rainfall, water, population)
-│   ├── scoring/                    # Susceptibility models (WSI, RF, Ensemble)
-│   ├── utils/                      # Cache, CRS, validation utilities
-│   └── visualization/              # Map builder, layers, PDF report, explainability
-├── data/
-│   ├── elevation/                  # SRTM GeoTIFF files
-│   ├── water_bodies/               # Cached OSM water body GeoJSON
-│   ├── drainage_lines/             # Drainage line GeoJSON
-│   └── landmask/                   # Natural Earth land polygon
+├── app.py                              # Streamlit entry point (12-tab DSS)
+├── requirements.txt                    # Python dependencies
+├── packages.txt                        # System packages for cloud deployment
+├── .env.example                        # Environment variable template
+├── DEPLOYMENT.md                       # Deployment guide
+├── assets/
+│   └── pravaah_ai_logo.svg             # Product logo
+├── flood_risk_zonation/                # Core analysis package
+│   ├── pipeline.py                     # Phase 1 hazard engine
+│   ├── sih_pipeline.py                 # Phase 2+3 habitation intelligence
+│   ├── models.py                       # All typed dataclasses
+│   ├── config.py                       # BoundingBox, PipelineConfig
+│   ├── health.py                       # Application health check
+│   ├── habitation/                     # OSM settlement ingestion
+│   ├── exposure/                       # Spatial exposure analysis
+│   ├── vulnerability/                  # Weighted vulnerability scorer
+│   ├── capacity/                       # Carrying capacity assessment
+│   ├── relocation/                     # Priority + candidate discovery
+│   ├── spatial_zones/                  # RED/YELLOW/GREEN classifier
+│   ├── weather/                        # Live weather client
+│   ├── forecast/                       # 24–72h risk projection
+│   ├── validation/                     # Historical flood validation
+│   ├── scenarios/                      # What-if simulation engine
+│   ├── explainability/                 # SHAP ML explainability
+│   ├── agents/                         # Agentic decision support
+│   ├── features/                       # Geospatial feature extraction
+│   ├── scoring/                        # Susceptibility models
+│   └── visualization/                  # Map, PDF, export
 └── tests/
-    ├── unit/                       # Unit tests
-    ├── integration/                # Integration tests
-    └── property/                   # Property-based tests (Hypothesis)
+    ├── unit/                           # 40+ unit test files
+    ├── integration/                    # Integration tests
+    └── property/                       # Hypothesis property tests
 ```
 
 ---
 
-*PRAVAAH — Predictive Risk & Vulnerability Assessment for At-Risk Habitations*
+*PRAVAAH-AI — Predictive Risk & Vulnerability Assessment for At-Risk Habitations*

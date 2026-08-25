@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pravaah"
 version = "1.0.0"
-description = "PRAVAAH: AI-powered geospatial decision support for hazard red zones, vulnerable habitation intelligence, carrying capacity, and relocation prioritisation"
+description = "PRAVAAH-AI: AI-powered geospatial decision support for hazard red zones, vulnerable habitation intelligence, carrying capacity, and relocation prioritisation"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
-    { name = "PRAVAAH Team" }
+    { name = "PRAVAAH-AI Team" }
 ]
 keywords = ["flood", "hazard", "gis", "geospatial", "machine-learning", "streamlit", "decision-support", "habitation"]
 classifiers = [

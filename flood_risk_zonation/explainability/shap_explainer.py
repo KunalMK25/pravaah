@@ -1,5 +1,5 @@
 """
-PRAVAAH — SHAP ML Hazard Explainability.
+PRAVAAH-AI — SHAP ML Hazard Explainability.
 
 PURPOSE:
   Explain WHY the ML model classified a specific grid cell as high-risk.

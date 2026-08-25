@@ -1,5 +1,5 @@
 """
-PRAVAAH — Bounded Agent Implementations.
+PRAVAAH-AI — Bounded Agent Implementations.
 
 Each agent receives a structured context dict (pre-populated by the orchestrator
 from pipeline outputs), calls at most one or two tool functions, and returns a

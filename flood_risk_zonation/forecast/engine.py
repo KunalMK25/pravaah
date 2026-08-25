@@ -1,5 +1,5 @@
 """
-PRAVAAH — Short-term Flood-Risk Forecast Engine.
+PRAVAAH-AI — Short-term Flood-Risk Forecast Engine.
 
 METHODOLOGY (transparent, documented):
 ───────────────────────────────────────────────────────────────────────────

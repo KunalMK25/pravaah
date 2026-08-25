@@ -1,5 +1,5 @@
 """
-PRAVAAH — Application Health / Status Check.
+PRAVAAH-AI — Application Health / Status Check.
 
 Reports the availability of each optional service without blocking startup.
 Used by the UI status panel and deployment health checks.

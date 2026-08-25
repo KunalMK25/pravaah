@@ -1,5 +1,5 @@
 """
-PRAVAAH — Relocation priority scorer.
+PRAVAAH-AI — Relocation priority scorer.
 
 METHODOLOGY (fully declared, transparent):
 ─────────────────────────────────────────────────────────────────────────────

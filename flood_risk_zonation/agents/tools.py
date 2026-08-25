@@ -1,5 +1,5 @@
 """
-PRAVAAH — Agent Tool Definitions.
+PRAVAAH-AI — Agent Tool Definitions.
 
 Clean, bounded tool functions that agents call to retrieve structured
 PRAVAAH data.  Tools are pure functions: they take IDs/parameters and

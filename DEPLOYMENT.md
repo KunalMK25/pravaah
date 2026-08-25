@@ -1,9 +1,9 @@
-# PRAVAAH — Deployment Guide
+# PRAVAAH-AI — Deployment Guide
 
 ## Recommended Platform: Streamlit Community Cloud
 
 Streamlit Community Cloud is the preferred deployment target because it:
-- Supports all PRAVAAH geospatial dependencies (geopandas, rasterio, shapely)
+- Supports all PRAVAAH-AI geospatial dependencies (geopandas, rasterio, shapely)
 - Has free tier with adequate memory for 500m-cell grid analysis
 - Integrates natively with GitHub for continuous deployment
 - Supports encrypted secrets management
@@ -55,7 +55,7 @@ Streamlit Cloud reads this file automatically.
 | `PRAVAAH_ANTHROPIC_MODEL` | Optional | `claude-3-haiku-20240307` | Anthropic model |
 | `PRAVAAH_WEATHER_CACHE_DIR` | Optional | `data/cache/weather` | Weather cache path |
 
-### PRAVAAH works fully without any API keys:
+### PRAVAAH-AI works fully without any API keys:
 - Weather: UNAVAILABLE (no dynamic adjustment — baseline analysis still complete)
 - LLM: UNAVAILABLE (rule-based agent fallback — all decisions still produced)
 - All 12 tabs functional
@@ -109,7 +109,7 @@ For large areas, use 1000m resolution.
 
 ## Health Check
 
-PRAVAAH includes a built-in health status indicator in the sidebar showing:
+PRAVAAH-AI includes a built-in health status indicator in the sidebar showing:
 - App core: AVAILABLE/UNAVAILABLE
 - Weather API: AVAILABLE/DEGRADED/UNAVAILABLE
 - OSM Overpass: AVAILABLE/DEGRADED/UNAVAILABLE

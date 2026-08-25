@@ -1,4 +1,4 @@
-"""PRAVAAH — spatial Red/Yellow/Green zone classification package."""
+"""PRAVAAH-AI — spatial Red/Yellow/Green zone classification package."""
 from flood_risk_zonation.spatial_zones.classifier import (
     classify_spatial_zones,
     ZONE_RED,

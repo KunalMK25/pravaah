@@ -1,5 +1,5 @@
 """
-PRAVAAH — Relocation Candidate Discovery and Ranking.
+PRAVAAH-AI — Relocation Candidate Discovery and Ranking.
 
 METHODOLOGY (declared, transparent):
 ────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 """
-PRAVAAH — Live Weather Client.
+PRAVAAH-AI — Live Weather Client.
 
 Fetches current conditions and short-term forecast from OpenWeatherMap.
 Implements the same resilience architecture as water_bodies.py:
