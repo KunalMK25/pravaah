@@ -691,3 +691,363 @@ class FullSIHResult:
 
     def get_decision_for(self, hab_id: str) -> "AgentDecision | None":
         return self.agent_decisions.get(hab_id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRAVAAH INTELLIGENCE ENHANCEMENT — WEATHER, FORECAST, VALIDATION, SCENARIOS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class WeatherObservation:
+    """
+    A single weather observation or short-term forecast point.
+
+    Attributes
+    ----------
+    timestamp : str
+        ISO-8601 datetime string (UTC).
+    rainfall_mm : float
+        Precipitation in millimetres.  -1.0 if unavailable.
+    temperature_c : float
+        Temperature in Celsius.  -999.0 if unavailable.
+    humidity_pct : float
+        Relative humidity [0–100].  -1.0 if unavailable.
+    wind_speed_ms : float
+        Wind speed in m/s.  -1.0 if unavailable.
+    description : str
+        Human-readable weather description (e.g. "heavy rain").
+    """
+    timestamp: str
+    rainfall_mm: float = -1.0
+    temperature_c: float = -999.0
+    humidity_pct: float = -1.0
+    wind_speed_ms: float = -1.0
+    description: str = ""
+
+
+@dataclass
+class WeatherData:
+    """
+    Live or cached weather data for a geographic point.
+
+    Attributes
+    ----------
+    lat, lon : float
+        Query location.
+    current : WeatherObservation | None
+        Current conditions; None if unavailable.
+    forecast : list[WeatherObservation]
+        Short-term forecast observations (up to 72 h).
+    source : str
+        "openweather_live" | "openweather_cache" | "fallback" | "unavailable"
+    fetched_at : str
+        ISO-8601 UTC timestamp of when data was fetched.
+    data_status : str
+        "LIVE" | "CACHED" | "FALLBACK" | "UNAVAILABLE"
+    location_name : str
+        Location label returned by the provider.
+    dynamic_risk_adjustment : float
+        Normalised [0, 1] rainfall-based risk multiplier.
+        0.0 = no additional risk from current weather.
+        1.0 = maximum additional risk.
+    dynamic_risk_reason : str
+        Plain-language explanation of the adjustment (e.g. "Heavy rainfall (82 mm) elevates risk").
+    """
+    lat: float
+    lon: float
+    current: Optional[Any] = None       # WeatherObservation
+    forecast: list = field(default_factory=list)  # list[WeatherObservation]
+    source: str = "unavailable"
+    fetched_at: str = ""
+    data_status: str = "UNAVAILABLE"
+    location_name: str = ""
+    dynamic_risk_adjustment: float = 0.0
+    dynamic_risk_reason: str = ""
+
+
+@dataclass
+class ForecastPoint:
+    """
+    A single forecast horizon risk projection for one location.
+
+    Attributes
+    ----------
+    horizon_h : int
+        Forecast horizon in hours (e.g. 24, 48, 72).
+    forecast_rainfall_mm : float
+        Total forecast precipitation for this horizon.
+    baseline_risk_score : float
+        ML hazard score without dynamic weather adjustment.
+    adjusted_risk_score : float
+        Hazard score after applying the rainfall-based dynamic adjustment.
+    risk_change : float
+        adjusted_risk_score - baseline_risk_score.  Positive = increased risk.
+    spatial_zone : str
+        Projected spatial zone at this horizon: RED | YELLOW | GREEN | WATER.
+    confidence : str
+        "HIGH" | "MEDIUM" | "LOW" — based on forecast data quality.
+    provenance : str
+        "forecast_rainfall_adjusted" | "baseline_only" | "unavailable"
+    """
+    horizon_h: int
+    forecast_rainfall_mm: float
+    baseline_risk_score: float
+    adjusted_risk_score: float
+    risk_change: float
+    spatial_zone: str
+    confidence: str = "MEDIUM"
+    provenance: str = "forecast_rainfall_adjusted"
+
+
+@dataclass
+class ForecastResult:
+    """
+    Short-term (24–72 h) flood-risk forecast for a bounding box.
+
+    IMPORTANT: This is a risk PROJECTION (estimate), not a deterministic
+    prediction.  It combines the baseline ML hazard model with available
+    precipitation forecast data.  Always labelled as FORECAST/ESTIMATE.
+
+    Attributes
+    ----------
+    bbox_key : str
+        Bounding box identifier.
+    baseline_zone_counts : dict[str, int]
+        Current zone counts (RED/YELLOW/GREEN/WATER) from the baseline run.
+    horizons : list[ForecastPoint]
+        Per-horizon projections (typically 24h, 48h, 72h).
+    weather_source : str
+        Provenance of the forecast precipitation data.
+    forecast_timestamp : str
+        When this forecast was generated (ISO-8601 UTC).
+    methodology : str
+        Plain-language description of the forecast approach.
+    """
+    bbox_key: str
+    baseline_zone_counts: dict = field(default_factory=dict)
+    horizons: list = field(default_factory=list)   # list[ForecastPoint]
+    weather_source: str = "unavailable"
+    forecast_timestamp: str = ""
+    methodology: str = (
+        "Baseline ML hazard susceptibility adjusted by forecast precipitation. "
+        "ESTIMATE only — not a deterministic flood prediction."
+    )
+
+    def get_horizon(self, hours: int) -> "ForecastPoint | None":
+        for h in self.horizons:
+            if h.horizon_h == hours:
+                return h
+        return None
+
+
+@dataclass
+class HistoricalFloodEvent:
+    """
+    A single historical flood event used for independent model validation.
+
+    Attributes
+    ----------
+    event_id : str
+        Unique identifier (e.g. "bangalore_2022_09").
+    event_name : str
+        Human-readable event name.
+    event_date : str
+        Date or date-range string (ISO-8601 or descriptive).
+    region : str
+        Geographic region description.
+    source : str
+        Data source identifier (e.g. "Dartmouth_FO", "NASA_MODIS", "Manual").
+    source_url : str
+        URL or reference for traceability.
+    flood_area_km2 : float
+        Total observed flood extent in km² (-1 if unknown).
+    affected_cells : list[str]
+        Grid cell IDs that intersected the observed flood extent.
+    flood_geojson : Any | None
+        GeoJSON dict of the observed flood polygon, if available.
+    notes : str
+        Any caveats about data quality or coverage.
+    """
+    event_id: str
+    event_name: str
+    event_date: str
+    region: str
+    source: str
+    source_url: str = ""
+    flood_area_km2: float = -1.0
+    affected_cells: list = field(default_factory=list)
+    flood_geojson: Any = None
+    notes: str = ""
+
+
+@dataclass
+class ValidationMetrics:
+    """
+    Spatial overlap metrics between PRAVAAH high-risk prediction and
+    an independently observed flood extent.
+
+    NOTE: These are INDEPENDENT VALIDATION metrics, distinct from the
+    cross-validation metrics computed during ML training on WSI pseudo-labels.
+
+    Attributes
+    ----------
+    event_id : str
+    precision : float
+        Fraction of predicted high-risk cells that were observed to flood.
+    recall : float
+        Fraction of observed flood cells that were predicted as high-risk.
+    f1_score : float
+        Harmonic mean of precision and recall.
+    iou : float
+        Intersection-over-Union of predicted and observed flood extents.
+    predicted_high_count : int
+    observed_flood_count : int
+    overlap_count : int
+    notes : str
+    """
+    event_id: str
+    precision: float
+    recall: float
+    f1_score: float
+    iou: float
+    predicted_high_count: int
+    observed_flood_count: int
+    overlap_count: int
+    notes: str = ""
+
+
+@dataclass
+class ValidationResult:
+    """
+    Complete historical validation output for one analysis run.
+
+    Attributes
+    ----------
+    events : list[HistoricalFloodEvent]
+        Validated events.
+    metrics : list[ValidationMetrics]
+        Per-event metrics.
+    overall_notes : str
+        Scientific caveats and methodology statement.
+    data_status : str
+        "VALIDATED" | "PARTIAL" | "NO_EVENTS_AVAILABLE"
+    """
+    events: list = field(default_factory=list)
+    metrics: list = field(default_factory=list)
+    overall_notes: str = (
+        "Independent validation against historical flood observations. "
+        "Metrics measure spatial overlap between PRAVAAH high-risk predictions "
+        "and observed flood extents from independent sources. "
+        "These are distinct from ML cross-validation metrics (which use WSI pseudo-labels)."
+    )
+    data_status: str = "NO_EVENTS_AVAILABLE"
+
+
+@dataclass
+class ScenarioParameters:
+    """
+    User-defined parameters for a what-if scenario simulation.
+
+    Attributes
+    ----------
+    scenario_id : str
+    label : str
+        Human-readable label (e.g. "+30% Rainfall").
+    rainfall_multiplier : float
+        Multiply baseline rainfall by this factor. 1.0 = no change.
+    extra_rainfall_mm : float
+        Additional absolute rainfall added on top of the multiplier.
+    population_multiplier : float
+        Scale population density. 1.0 = no change.
+    drainage_capacity_multiplier : float
+        Scale drainage capacity. Values < 1 simulate degraded drainage.
+    description : str
+        User-supplied description.
+    """
+    scenario_id: str
+    label: str
+    rainfall_multiplier: float = 1.0
+    extra_rainfall_mm: float = 0.0
+    population_multiplier: float = 1.0
+    drainage_capacity_multiplier: float = 1.0
+    description: str = ""
+
+
+@dataclass
+class ScenarioResult:
+    """
+    Comparison between the baseline PRAVAAH run and a what-if scenario.
+
+    IMPORTANT: Scenario results are clearly labelled SIMULATION/ESTIMATE.
+    They must never overwrite or replace the baseline result.
+
+    Attributes
+    ----------
+    scenario_id : str
+    parameters : ScenarioParameters
+    baseline_zone_counts : dict[str, int]
+    scenario_zone_counts : dict[str, int]
+    delta_zone_counts : dict[str, int]
+        scenario − baseline for each zone.
+    baseline_critical : int
+    scenario_critical : int
+    delta_critical : int
+    baseline_high : int
+    scenario_high : int
+    habitations_escalated : list[str]
+        hab_ids where relocation priority increased under the scenario.
+    habitations_deescalated : list[str]
+        hab_ids where relocation priority decreased.
+    narrative : str
+        Plain-language comparison summary.
+    provenance : str
+        Always "SIMULATION — user-defined parameter override".
+    """
+    scenario_id: str
+    parameters: Any          # ScenarioParameters
+    baseline_zone_counts: dict = field(default_factory=dict)
+    scenario_zone_counts: dict = field(default_factory=dict)
+    delta_zone_counts: dict = field(default_factory=dict)
+    baseline_critical: int = 0
+    scenario_critical: int = 0
+    delta_critical: int = 0
+    baseline_high: int = 0
+    scenario_high: int = 0
+    habitations_escalated: list = field(default_factory=list)
+    habitations_deescalated: list = field(default_factory=list)
+    narrative: str = ""
+    provenance: str = "SIMULATION — user-defined parameter override"
+
+
+@dataclass
+class SHAPExplanation:
+    """
+    SHAP explanation for a single grid cell's ML hazard score.
+
+    Attributes
+    ----------
+    cell_id : str
+    shap_values : dict[str, float]
+        Feature name → SHAP value (positive = increases risk score).
+    base_value : float
+        Model expected value (average prediction across training data).
+    predicted_value : float
+        The model's actual prediction for this cell.
+    top_positive_features : list[tuple[str, float]]
+        Features driving risk up, sorted by |SHAP|.
+    top_negative_features : list[tuple[str, float]]
+        Features driving risk down, sorted by |SHAP|.
+    explanation_text : str
+        Plain-language summary.
+    provenance : str
+        "shap_tree_explainer" | "shap_kernel_explainer" | "unavailable"
+    """
+    cell_id: str
+    shap_values: dict = field(default_factory=dict)
+    base_value: float = 0.0
+    predicted_value: float = 0.0
+    top_positive_features: list = field(default_factory=list)
+    top_negative_features: list = field(default_factory=list)
+    explanation_text: str = ""
+    provenance: str = "shap_tree_explainer"

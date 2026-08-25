@@ -291,3 +291,153 @@ def compare_relocation_candidates_tool(
         "ranking":              ranking,
         "comparison_narrative": narrative,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTELLIGENCE ENHANCEMENT TOOLS — Weather, Forecast, Scenario, Validation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_weather_summary(weather_data: Any) -> dict:
+    """
+    Return a compact structured weather summary for agent consumption.
+
+    Parameters
+    ----------
+    weather_data : WeatherData
+
+    Returns
+    -------
+    dict with keys: status, current_rainfall_mm, max_forecast_mm_24h,
+                    dynamic_risk_adjustment, reason, source, timestamp
+    """
+    if weather_data is None or weather_data.data_status == "UNAVAILABLE":
+        return {
+            "status":                   "UNAVAILABLE",
+            "current_rainfall_mm":      -1.0,
+            "max_forecast_mm_24h":      -1.0,
+            "dynamic_risk_adjustment":  0.0,
+            "reason":                   "Weather data not available.",
+            "source":                   "unavailable",
+            "timestamp":                "",
+        }
+
+    curr_mm = -1.0
+    if weather_data.current and weather_data.current.rainfall_mm >= 0:
+        curr_mm = weather_data.current.rainfall_mm
+
+    fc_24h = [
+        obs.rainfall_mm
+        for obs in weather_data.forecast[:8]
+        if obs.rainfall_mm >= 0
+    ]
+    max_fc = round(max(fc_24h), 2) if fc_24h else -1.0
+
+    return {
+        "status":                   weather_data.data_status,
+        "current_rainfall_mm":      curr_mm,
+        "max_forecast_mm_24h":      max_fc,
+        "dynamic_risk_adjustment":  weather_data.dynamic_risk_adjustment,
+        "reason":                   weather_data.dynamic_risk_reason,
+        "source":                   weather_data.source,
+        "timestamp":                weather_data.fetched_at,
+    }
+
+
+def get_forecast_summary(forecast_result: Any) -> dict:
+    """
+    Return a compact forecast summary for agent consumption.
+
+    Parameters
+    ----------
+    forecast_result : ForecastResult | None
+
+    Returns
+    -------
+    dict with keys: available, methodology, horizons (list of dicts)
+    """
+    if forecast_result is None:
+        return {"available": False, "methodology": "No forecast available.", "horizons": []}
+
+    horizon_dicts = [
+        {
+            "horizon_h":            h.horizon_h,
+            "forecast_rainfall_mm": h.forecast_rainfall_mm,
+            "baseline_risk_score":  h.baseline_risk_score,
+            "adjusted_risk_score":  h.adjusted_risk_score,
+            "risk_change":          h.risk_change,
+            "spatial_zone":         h.spatial_zone,
+            "confidence":           h.confidence,
+            "provenance":           h.provenance,
+        }
+        for h in forecast_result.horizons
+    ]
+    return {
+        "available":    True,
+        "methodology":  forecast_result.methodology,
+        "weather_source": forecast_result.weather_source,
+        "timestamp":    forecast_result.forecast_timestamp,
+        "horizons":     horizon_dicts,
+    }
+
+
+def get_scenario_summary(scenario_result: Any) -> dict:
+    """
+    Return a compact scenario comparison summary for agent consumption.
+
+    Parameters
+    ----------
+    scenario_result : ScenarioResult | None
+    """
+    if scenario_result is None:
+        return {"available": False, "narrative": "No scenario run.", "delta_zone_counts": {}}
+
+    return {
+        "available":              True,
+        "scenario_label":         scenario_result.parameters.label,
+        "narrative":              scenario_result.narrative,
+        "delta_zone_counts":      scenario_result.delta_zone_counts,
+        "delta_critical":         scenario_result.delta_critical,
+        "baseline_critical":      scenario_result.baseline_critical,
+        "scenario_critical":      scenario_result.scenario_critical,
+        "habitations_escalated":  len(scenario_result.habitations_escalated),
+        "habitations_escalated_ids": scenario_result.habitations_escalated,
+        "provenance":             scenario_result.provenance,
+    }
+
+
+def get_validation_summary(validation_result: Any) -> dict:
+    """
+    Return a compact validation summary for agent consumption.
+
+    Parameters
+    ----------
+    validation_result : ValidationResult | None
+    """
+    if validation_result is None or validation_result.data_status == "NO_EVENTS_AVAILABLE":
+        return {
+            "available":     False,
+            "data_status":   "NO_EVENTS_AVAILABLE",
+            "events":        [],
+            "overall_notes": "No historical events available for this area.",
+        }
+
+    metric_dicts = [
+        {
+            "event_id":   m.event_id,
+            "precision":  m.precision,
+            "recall":     m.recall,
+            "f1_score":   m.f1_score,
+            "iou":        m.iou,
+            "overlap":    m.overlap_count,
+            "predicted":  m.predicted_high_count,
+            "observed":   m.observed_flood_count,
+        }
+        for m in validation_result.metrics
+    ]
+    return {
+        "available":     True,
+        "data_status":   validation_result.data_status,
+        "events":        [e.event_name for e in validation_result.events],
+        "metrics":       metric_dicts,
+        "overall_notes": validation_result.overall_notes,
+    }

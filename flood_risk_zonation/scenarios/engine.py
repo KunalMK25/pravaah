@@ -1,0 +1,264 @@
+"""
+PRAVAAH — What-If Scenario Engine.
+
+DESIGN PRINCIPLE — BASELINE ISOLATION:
+  A scenario NEVER modifies the baseline FloodRiskResult or SIHAnalysisResult.
+  It creates a parameter-overridden copy of the relevant feature columns,
+  re-runs the scoring logic on that copy, and returns a ScenarioResult
+  alongside the baseline for comparison.
+
+  The baseline is ALWAYS preserved intact.
+
+SUPPORTED PARAMETERS:
+  rainfall_multiplier          : scale rainfall_mean_mm and rainfall_max_24h_mm
+  extra_rainfall_mm            : add absolute mm on top of the multiplier
+  population_multiplier        : scale population_density
+  drainage_capacity_multiplier : scale drainage_capacity (< 1 = degraded)
+
+METHODOLOGY:
+  1. Copy the scored_grid feature columns.
+  2. Apply parameter overrides to the copy.
+  3. Re-run WeightedSusceptibilityModel.predict_proba() on the modified features.
+  4. Re-apply FloodRiskScorer to get scenario risk scores and classes.
+  5. Apply spatial zone classification to the scenario grid.
+  6. Compare zone counts and habitation priorities against baseline.
+  7. Return ScenarioResult with provenance="SIMULATION — user-defined parameter override".
+
+  The scenario result is always labelled SIMULATION.
+  It must never be presented as a forecast or observation.
+"""
+from __future__ import annotations
+
+import copy
+import logging
+import time
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from flood_risk_zonation.features.extractor import FEATURE_COLUMNS
+from flood_risk_zonation.models import ScenarioParameters, ScenarioResult
+from flood_risk_zonation.spatial_zones.classifier import (
+    classify_spatial_zones,
+    ZONE_RED, ZONE_YELLOW, ZONE_GREEN, ZONE_WATER,
+)
+
+logger = logging.getLogger(__name__)
+
+_PRIORITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
+
+def _escalated(base_priority: str, scenario_priority: str) -> bool:
+    return _PRIORITY_ORDER.get(scenario_priority, 9) < _PRIORITY_ORDER.get(base_priority, 9)
+
+
+def _deescalated(base_priority: str, scenario_priority: str) -> bool:
+    return _PRIORITY_ORDER.get(scenario_priority, 9) > _PRIORITY_ORDER.get(base_priority, 9)
+
+
+def run_scenario(
+    hazard_result: Any,        # FloodRiskResult
+    sih_result: Any | None,    # SIHAnalysisResult | None
+    params: ScenarioParameters,
+) -> ScenarioResult:
+    """
+    Execute a what-if scenario on top of an existing hazard result.
+
+    Parameters
+    ----------
+    hazard_result : FloodRiskResult
+        Completed baseline hazard run.
+    sih_result : SIHAnalysisResult | None
+        Baseline habitation intelligence result (for priority comparison).
+    params : ScenarioParameters
+        Parameter overrides.
+
+    Returns
+    -------
+    ScenarioResult
+        Comparison of scenario vs baseline.
+        provenance is always "SIMULATION — user-defined parameter override".
+    """
+    t0 = time.time()
+    grid = hazard_result.scored_grid.copy()
+    config = hazard_result.config
+
+    # ── Apply parameter overrides to a copy of features ───────────────────────
+    modified = grid.copy()
+
+    # Rainfall scaling
+    for col in ("rainfall_mean_mm", "rainfall_max_24h_mm"):
+        if col in modified.columns:
+            modified[col] = (
+                modified[col] * params.rainfall_multiplier
+                + params.extra_rainfall_mm
+            ).clip(lower=0.0)
+
+    # Population scaling
+    if "population_density" in modified.columns:
+        modified["population_density"] = (
+            modified["population_density"] * params.population_multiplier
+        ).clip(lower=0.0)
+
+    # Drainage capacity scaling
+    if "drainage_capacity" in modified.columns:
+        modified["drainage_capacity"] = (
+            modified["drainage_capacity"] * params.drainage_capacity_multiplier
+        ).clip(0.0, 1.0)
+
+    # ── Re-score using the fitted model from the baseline run ─────────────────
+    try:
+        from flood_risk_zonation.scoring.scorer import FloodRiskScorer
+        model = hazard_result.analysis_result.model
+
+        available_feats = [c for c in FEATURE_COLUMNS if c in modified.columns]
+        X_mod = modified[available_feats].copy()
+
+        scorer = FloodRiskScorer()
+        scorer.p_min = 0.0
+        scorer.p_max = 1.0
+        thresholds = {"low_max": config.low_threshold, "medium_max": config.medium_threshold}
+        scenario_grid = scorer.score_grid(modified, model, available_feats, thresholds)
+    except Exception as exc:
+        logger.warning("Scenario re-scoring failed (%s) — using original scores.", exc)
+        scenario_grid = modified.copy()
+        scenario_grid["risk_score"] = modified["risk_score"]
+        scenario_grid["risk_class"] = modified["risk_class"]
+
+    # ── Spatial zone classification on scenario grid ───────────────────────────
+    scenario_grid = classify_spatial_zones(scenario_grid)
+
+    # ── Zone count comparison ──────────────────────────────────────────────────
+    baseline_zones = {}
+    if "spatial_zone" in grid.columns:
+        baseline_zones = grid["spatial_zone"].value_counts().to_dict()
+    else:
+        from flood_risk_zonation.spatial_zones.classifier import classify_spatial_zones as _csz
+        _z = _csz(grid)
+        baseline_zones = _z["spatial_zone"].value_counts().to_dict()
+
+    for z in [ZONE_RED, ZONE_YELLOW, ZONE_GREEN, ZONE_WATER]:
+        baseline_zones.setdefault(z, 0)
+
+    scenario_zones = scenario_grid["spatial_zone"].value_counts().to_dict()
+    for z in [ZONE_RED, ZONE_YELLOW, ZONE_GREEN, ZONE_WATER]:
+        scenario_zones.setdefault(z, 0)
+
+    delta_zones = {z: scenario_zones[z] - baseline_zones[z] for z in baseline_zones}
+
+    # ── Habitation priority comparison ─────────────────────────────────────────
+    escalated_habs: list[str] = []
+    deescalated_habs: list[str] = []
+    baseline_critical = 0
+    scenario_critical = 0
+    baseline_high     = 0
+    scenario_high     = 0
+
+    if sih_result is not None:
+        from flood_risk_zonation.exposure.analysis import analyse_exposure
+        from flood_risk_zonation.vulnerability.scorer import score_vulnerability
+        from flood_risk_zonation.capacity.assessment import _capacity_status, _compute_safe_area
+        from flood_risk_zonation.relocation.priority import score_relocation_priority
+        from flood_risk_zonation.models import CarryingCapacityResult
+
+        exp_results  = sih_result.exposure_results
+        vuln_results = {v.hab_id: v for v in sih_result.vulnerability_results}
+        cap_results  = {c.hab_id: c for c in sih_result.capacity_results}
+        base_rel_map = {r.hab_id: r for r in sih_result.relocation_results}
+
+        for r in sih_result.relocation_results:
+            if r.priority_class == "CRITICAL":
+                baseline_critical += 1
+            if r.priority_class == "HIGH":
+                baseline_high += 1
+
+        # Re-derive exposure from scenario grid
+        try:
+            hab_ds = sih_result.habitation_dataset
+            sc_exp = analyse_exposure(hab_ds, scenario_grid,
+                                      low_threshold=config.low_threshold,
+                                      medium_threshold=config.medium_threshold)
+            for sc_e in sc_exp:
+                vuln = vuln_results.get(sc_e.hab_id)
+                cap  = cap_results.get(sc_e.hab_id)
+                if vuln is None or cap is None:
+                    continue
+
+                # Re-score relocation under scenario conditions
+                sc_rel = score_relocation_priority(sc_e, vuln, cap)
+
+                base_rel = base_rel_map.get(sc_e.hab_id)
+                if base_rel:
+                    if _escalated(base_rel.priority_class, sc_rel.priority_class):
+                        escalated_habs.append(sc_e.hab_id)
+                    elif _deescalated(base_rel.priority_class, sc_rel.priority_class):
+                        deescalated_habs.append(sc_e.hab_id)
+
+                if sc_rel.priority_class == "CRITICAL":
+                    scenario_critical += 1
+                if sc_rel.priority_class == "HIGH":
+                    scenario_high += 1
+        except Exception as exc:
+            logger.warning("Scenario habitation comparison failed: %s", exc)
+
+    # ── Build narrative ────────────────────────────────────────────────────────
+    delta_red  = delta_zones.get(ZONE_RED, 0)
+    delta_crit = scenario_critical - baseline_critical
+    parts = [f"Scenario: {params.label}."]
+    if params.rainfall_multiplier != 1.0:
+        parts.append(f"Rainfall ×{params.rainfall_multiplier:.1f}" +
+                     (f" + {params.extra_rainfall_mm:.0f} mm" if params.extra_rainfall_mm > 0 else "") + ".")
+    if delta_red > 0:
+        parts.append(f"RED zone cells increased by {delta_red:+d}.")
+    elif delta_red < 0:
+        parts.append(f"RED zone cells decreased by {abs(delta_red)}.")
+    else:
+        parts.append("No change in RED zone cell count.")
+    if delta_crit > 0:
+        parts.append(f"{delta_crit} additional CRITICAL habitation(s) under this scenario.")
+    elif delta_crit < 0:
+        parts.append(f"{abs(delta_crit)} fewer CRITICAL habitation(s) under this scenario.")
+    if escalated_habs:
+        parts.append(f"{len(escalated_habs)} habitation(s) escalated to higher priority.")
+    parts.append("SIMULATION — not a forecast or observation.")
+    narrative = " ".join(parts)
+
+    duration = time.time() - t0
+    logger.info(
+        "Scenario '%s' complete in %.1fs. ΔRED=%+d ΔCRIT=%+d escalated=%d",
+        params.label, duration, delta_red, delta_crit, len(escalated_habs),
+    )
+
+    return ScenarioResult(
+        scenario_id=params.scenario_id,
+        parameters=params,
+        baseline_zone_counts=baseline_zones,
+        scenario_zone_counts=scenario_zones,
+        delta_zone_counts=delta_zones,
+        baseline_critical=baseline_critical,
+        scenario_critical=scenario_critical,
+        delta_critical=delta_crit,
+        baseline_high=baseline_high,
+        scenario_high=scenario_high,
+        habitations_escalated=escalated_habs,
+        habitations_deescalated=deescalated_habs,
+        narrative=narrative,
+    )
+
+
+def build_preset_scenarios() -> list[ScenarioParameters]:
+    """Return the standard preset scenario parameter list."""
+    return [
+        ScenarioParameters("sc_rain_10", "+10% Rainfall",  rainfall_multiplier=1.10),
+        ScenarioParameters("sc_rain_20", "+20% Rainfall",  rainfall_multiplier=1.20),
+        ScenarioParameters("sc_rain_30", "+30% Rainfall",  rainfall_multiplier=1.30),
+        ScenarioParameters("sc_rain_50", "+50% Rainfall",  rainfall_multiplier=1.50),
+        ScenarioParameters("sc_rain_extreme", "+100% Rainfall (Extreme)", rainfall_multiplier=2.00,
+                           description="Doubling of rainfall — extreme scenario."),
+        ScenarioParameters("sc_drain_deg", "Degraded Drainage (−30%)", drainage_capacity_multiplier=0.70,
+                           description="30% reduction in drainage capacity."),
+        ScenarioParameters("sc_combined", "+30% Rain + Degraded Drainage",
+                           rainfall_multiplier=1.30, drainage_capacity_multiplier=0.70,
+                           description="Combined rainfall increase and drainage degradation."),
+    ]

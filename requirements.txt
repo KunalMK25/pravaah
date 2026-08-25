@@ -18,3 +18,4 @@ shapely>=2.0
 reportlab>=4.0
 requests>=2.31
 tenacity>=8.2
+shap>=0.44
