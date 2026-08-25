@@ -18,6 +18,8 @@ from flood_risk_zonation.visualization.layers import (
     add_rainfall_heatmap_layer,
     add_red_zone_layer,
     add_risk_choropleth_layer,
+    add_spatial_zone_layer,
+    add_relocation_candidate_layer,
     add_water_bodies_layer,
 )
 
@@ -42,10 +44,15 @@ class FloodRiskMapBuilder:
         google_maps_api_key: str | None = None,
         water_bodies: gpd.GeoDataFrame | None = None,
         model_bounds: dict | None = None,
-        # SIH26191 arguments
+        # SIH / Phase 2 arguments
         exposure_results: list | None = None,
         relocation_results: list | None = None,
         show_red_zones: bool = True,
+        # Phase 3 — spatial zones + candidates
+        zoned_grid: gpd.GeoDataFrame | None = None,
+        relocation_candidates: dict | None = None,
+        show_spatial_zones: bool = True,
+        zone_filter: list[str] | None = None,
     ) -> folium.Map:
         """
         Construct a Folium map with risk choropleth, drainage lines,
@@ -76,8 +83,11 @@ class FloodRiskMapBuilder:
         # Layer 1: Risk classification choropleth (color fill, no interactivity)
         add_risk_choropleth_layer(m, scored_grid)
 
-        # Layer 2: Red zone highlight (SIH26191)
-        if show_red_zones:
+        # Layer 2: Spatial zones (RED/YELLOW/GREEN) — Phase 3
+        if show_spatial_zones and zoned_grid is not None:
+            add_spatial_zone_layer(m, zoned_grid, zone_filter=zone_filter)
+        elif show_red_zones:
+            # Fall back to legacy red-zone layer when zoned_grid not yet computed
             add_red_zone_layer(m, scored_grid)
 
         # Layer 3: Drainage lines
@@ -93,15 +103,18 @@ class FloodRiskMapBuilder:
         if water_bodies is not None:
             add_water_bodies_layer(m, water_bodies)
 
-        # Layer 7: Habitation markers (SIH26191)
+        # Layer 7: Habitation markers (Phase 2)
         if exposure_results:
             add_habitation_layer(m, exposure_results, relocation_results)
 
-        # Per-cell hover tooltips + click popups — added BEFORE LayerControl
-        # so they sit on top in Leaflet's z-order and receive mouse events.
+        # Layer 8: Relocation candidate areas (Phase 3)
+        if relocation_candidates and exposure_results:
+            add_relocation_candidate_layer(m, relocation_candidates, exposure_results)
+
+        # Per-cell hover tooltips + click popups
         self.add_cell_explainability_layer(m, scored_grid, model_bounds=model_bounds)
 
-        # Layer control added last so it indexes all layers including Cell Info
+        # Layer control added last so it indexes all layers
         folium.LayerControl(collapsed=False).add_to(m)
 
         return m

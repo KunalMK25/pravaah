@@ -500,3 +500,194 @@ class SIHAnalysisResult:
             if r.hab_id == hab_id:
                 return r
         return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRAVAAH PHASE 3 — SPATIAL ZONES, RELOCATION CANDIDATES, AGENTIC LAYER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class RelocationCandidate:
+    """
+    A potential relocation destination area identified from GREEN spatial zones.
+
+    IMPORTANT: A RelocationCandidate is a DECISION-SUPPORT RECOMMENDATION.
+    It is NOT a legally designated evacuation shelter, approved relocation
+    site, or official safe zone.  It is a lower-risk area that scores well
+    on measurable spatial and infrastructure factors and warrants further
+    evaluation by the relevant authorities.
+
+    Attributes
+    ----------
+    candidate_id : str
+        Unique identifier for this candidate area (e.g. "cand_001").
+    source_hab_id : str
+        The habitation for which this candidate was identified.
+    centroid_lat, centroid_lon : float
+        Approximate centre of the candidate area.
+    distance_km : float
+        Straight-line distance from source habitation to candidate centre.
+    area_km2 : float
+        Estimated area of the candidate GREEN zone cluster (km²).
+    candidate_score : float
+        Composite candidate quality score in [0, 1]; higher = better.
+    mean_hazard_score : float
+        Mean hazard score of cells in this candidate area.
+    nearest_road_km : float
+        Estimated distance to nearest major road (km); -1 if unknown.
+    nearest_healthcare_km : float
+        Estimated distance to nearest healthcare facility (km); -1 if unknown.
+    cell_count : int
+        Number of grid cells in this candidate cluster.
+    notes : str
+        Plain-language summary of candidate strengths and constraints.
+    data_provenance : str
+        Source of the candidate ("spatial_zone_green").
+    """
+
+    candidate_id: str
+    source_hab_id: str
+    centroid_lat: float
+    centroid_lon: float
+    distance_km: float
+    area_km2: float
+    candidate_score: float
+    mean_hazard_score: float = 0.0
+    nearest_road_km: float = -1.0
+    nearest_healthcare_km: float = -1.0
+    cell_count: int = 0
+    notes: str = ""
+    data_provenance: str = "spatial_zone_green"
+
+
+@dataclass
+class AgentEvidence:
+    """
+    Structured evidence record produced by a single PRAVAAH agent.
+
+    Attributes
+    ----------
+    agent_name : str
+        Identifier of the agent that produced this record.
+    summary : str
+        Plain-language summary of the agent's finding.
+    severity : str
+        "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+    key_factors : list[str]
+        Ordered list of dominant factors driving the finding.
+    metrics : dict
+        Raw metric values the agent was given (for traceability).
+    ai_assisted : bool
+        True if an LLM contributed to this output; False if rule-based fallback.
+    """
+
+    agent_name: str
+    summary: str
+    severity: str
+    key_factors: list = field(default_factory=list)
+    metrics: dict = field(default_factory=dict)
+    ai_assisted: bool = False
+
+
+@dataclass
+class AgentDecision:
+    """
+    Final structured decision produced by the PRAVAAH Agent Orchestrator.
+
+    This is the authoritative output of the agentic layer.  It is always
+    backed by structured GIS/ML evidence — the LLM (if available) provides
+    explanatory language, but all numeric facts come from the pipeline.
+
+    Attributes
+    ----------
+    hab_id : str
+    hab_name : str
+    priority_class : str
+        "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" — from deterministic pipeline.
+    relocation_score : float
+        Deterministic relocation score [0, 1].
+    spatial_zone : str
+        "RED" | "YELLOW" | "GREEN" | "WATER"
+    summary : str
+        Plain-language summary of the overall decision.
+    recommended_action : str
+        Specific action recommendation.
+    evidence : list[AgentEvidence]
+        Per-agent evidence records.
+    candidate_areas : list[RelocationCandidate]
+        Ranked relocation candidate areas.
+    top_candidate_reason : str
+        Plain-language explanation of why the top candidate was recommended.
+    ai_assisted : bool
+        True if any LLM contributed; False if fully rule-based.
+    fallback_reason : str
+        If ai_assisted=False, explains why (e.g. "LLM unavailable").
+    """
+
+    hab_id: str
+    hab_name: str
+    priority_class: str
+    relocation_score: float
+    spatial_zone: str
+    summary: str
+    recommended_action: str
+    evidence: list = field(default_factory=list)
+    candidate_areas: list = field(default_factory=list)
+    top_candidate_reason: str = ""
+    ai_assisted: bool = False
+    fallback_reason: str = ""
+
+
+@dataclass
+class FullSIHResult:
+    """
+    Extended SIH result that includes spatial zones, relocation candidates,
+    and (optionally) agentic decision-support outputs.
+
+    This wraps SIHAnalysisResult and adds the Phase 3 intelligence layers.
+    The underlying SIHAnalysisResult is always present; the Phase 3 fields
+    are populated when run_phase3() has been called.
+    """
+
+    sih_result: Any   # SIHAnalysisResult
+    zoned_grid: Any = None    # gpd.GeoDataFrame with spatial_zone column
+    habitation_zones: dict = field(default_factory=dict)
+    # hab_id → spatial zone string (RED/YELLOW/GREEN/WATER)
+    relocation_candidates: dict = field(default_factory=dict)
+    # hab_id → list[RelocationCandidate]
+    agent_decisions: dict = field(default_factory=dict)
+    # hab_id → AgentDecision
+    phase3_duration_seconds: float = 0.0
+
+    # ── Convenience helpers ────────────────────────────────────────────────────
+
+    @property
+    def red_zone_count(self) -> int:
+        from flood_risk_zonation.spatial_zones.classifier import ZONE_RED
+        if self.zoned_grid is None:
+            return 0
+        return int((self.zoned_grid["spatial_zone"] == ZONE_RED).sum())
+
+    @property
+    def yellow_zone_count(self) -> int:
+        from flood_risk_zonation.spatial_zones.classifier import ZONE_YELLOW
+        if self.zoned_grid is None:
+            return 0
+        return int((self.zoned_grid["spatial_zone"] == ZONE_YELLOW).sum())
+
+    @property
+    def green_zone_count(self) -> int:
+        from flood_risk_zonation.spatial_zones.classifier import ZONE_GREEN
+        if self.zoned_grid is None:
+            return 0
+        return int((self.zoned_grid["spatial_zone"] == ZONE_GREEN).sum())
+
+    def get_zone_for(self, hab_id: str) -> str:
+        return self.habitation_zones.get(hab_id, "UNKNOWN")
+
+    def get_candidates_for(self, hab_id: str) -> list:
+        return self.relocation_candidates.get(hab_id, [])
+
+    def get_decision_for(self, hab_id: str) -> "AgentDecision | None":
+        return self.agent_decisions.get(hab_id)

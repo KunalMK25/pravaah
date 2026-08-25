@@ -284,3 +284,188 @@ def add_red_zone_layer(
     ).add_to(fg)
     fg.add_to(folium_map)
     return folium_map
+
+
+# ── PRAVAAH Phase 3 — Spatial Zone Layers ─────────────────────────────────────
+
+# Operational zone colours (distinct from the ML risk class colours)
+ZONE_FILL_COLORS = {
+    "RED":    "#c0392b",
+    "YELLOW": "#f39c12",
+    "GREEN":  "#27ae60",
+    "WATER":  "#2980b9",
+}
+ZONE_BORDER_COLORS = {
+    "RED":    "#922b21",
+    "YELLOW": "#b7770d",
+    "GREEN":  "#1e8449",
+    "WATER":  "#1a5276",
+}
+
+
+def add_spatial_zone_layer(
+    folium_map: folium.Map,
+    zoned_grid: gpd.GeoDataFrame,
+    zone_filter: list[str] | None = None,
+) -> folium.Map:
+    """
+    Add the RED / YELLOW / GREEN / WATER spatial attention zone layer.
+
+    This layer is SEPARATE from the underlying ML risk classification.
+    It represents the operational attention zones:
+      🟥 RED    — primary hazard zone (based on ML High class)
+      🟨 YELLOW — secondary attention zone (adjacent to RED or Medium class)
+      🟩 GREEN  — lower-risk area / potential safe zone
+      🔵 WATER  — permanent water body
+
+    The layer name includes the zone type so users can toggle each
+    separately via the Folium layer control.
+
+    Parameters
+    ----------
+    zoned_grid : gpd.GeoDataFrame
+        Grid with a ``spatial_zone`` column (output of classify_spatial_zones).
+    zone_filter : list[str] | None
+        If specified, only render these zones (e.g. ["RED", "YELLOW"]).
+        Default: render all four zones.
+    """
+    if "spatial_zone" not in zoned_grid.columns:
+        return folium_map
+
+    zones_to_show = zone_filter or ["RED", "YELLOW", "GREEN", "WATER"]
+    zone_labels = {
+        "RED":    "🟥 RED — Primary Hazard Zone",
+        "YELLOW": "🟨 YELLOW — Secondary Attention Zone",
+        "GREEN":  "🟩 GREEN — Lower-Risk / Potential Safe Area",
+        "WATER":  "🔵 WATER — Permanent Water Body",
+    }
+
+    for zone in zones_to_show:
+        subset = zoned_grid[zoned_grid["spatial_zone"] == zone]
+        if len(subset) == 0:
+            continue
+        fill   = ZONE_FILL_COLORS.get(zone, "#aaaaaa")
+        border = ZONE_BORDER_COLORS.get(zone, "#666666")
+        label  = zone_labels.get(zone, zone)
+
+        # GREEN zone shown by default off (it can be large and noisy)
+        show_default = zone in ("RED", "YELLOW")
+
+        fg = folium.FeatureGroup(name=label, show=show_default)
+        folium.GeoJson(
+            subset.__geo_interface__,
+            style_function=lambda _, f=fill, b=border: {
+                "fillColor":   f,
+                "color":       b,
+                "weight":      0.8,
+                "fillOpacity": 0.45 if zone == "GREEN" else 0.55,
+            },
+        ).add_to(fg)
+        fg.add_to(folium_map)
+
+    return folium_map
+
+
+def add_relocation_candidate_layer(
+    folium_map: folium.Map,
+    relocation_candidates: dict,
+    source_exposures: list,
+) -> folium.Map:
+    """
+    Add relocation candidate area markers to the map.
+
+    Candidates are shown as green circle markers with a letter label.
+    Clicking a candidate shows its key metrics and candidate score.
+
+    Parameters
+    ----------
+    relocation_candidates : dict
+        hab_id → list[RelocationCandidate]
+    source_exposures : list[ExposureResult]
+        Used to show the source habitation name in the candidate popup.
+    """
+    if not relocation_candidates:
+        return folium_map
+
+    exp_map = {e.hab_id: e for e in source_exposures}
+    fg = folium.FeatureGroup(name="🟩 Relocation Candidate Areas", show=False)
+
+    rank_labels = ["A", "B", "C", "D", "E"]
+
+    for hab_id, candidates in relocation_candidates.items():
+        exp = exp_map.get(hab_id)
+        source_name = exp.name if exp else hab_id
+
+        for rank, cand in enumerate(candidates[:5]):
+            label = rank_labels[rank] if rank < len(rank_labels) else str(rank + 1)
+            score_pct = int(cand.candidate_score * 100)
+
+            tooltip_html = (
+                f"<b>Candidate {label}</b> for <i>{source_name}</i><br>"
+                f"Score: {score_pct}% | "
+                f"Distance: {cand.distance_km:.1f} km | "
+                f"Area: {cand.area_km2:.2f} km²"
+            )
+            popup_html = f"""
+            <div style="font-family:sans-serif;font-size:12px;min-width:200px;max-width:260px">
+              <h4 style="margin:0 0 6px 0;color:#1e8449">
+                Relocation Candidate {label}
+              </h4>
+              <p style="margin:0 0 4px 0;font-size:11px;color:#666">
+                For: <i>{source_name}</i>
+              </p>
+              <table style="width:100%;border-collapse:collapse">
+                <tr><td style="color:#666;padding:2px 4px">Candidate Score</td>
+                    <td style="padding:2px 4px"><b>{score_pct}%</b></td></tr>
+                <tr style="background:#f0f9f0">
+                  <td style="color:#666;padding:2px 4px">Distance</td>
+                  <td style="padding:2px 4px">{cand.distance_km:.1f} km</td></tr>
+                <tr><td style="color:#666;padding:2px 4px">Safe Area</td>
+                    <td style="padding:2px 4px">{cand.area_km2:.2f} km²</td></tr>
+                <tr style="background:#f0f9f0">
+                  <td style="color:#666;padding:2px 4px">Hazard</td>
+                  <td style="padding:2px 4px">{cand.mean_hazard_score:.0f}/100</td></tr>
+              </table>
+              <p style="margin:6px 0 0 0;font-size:10px;color:#555;border-top:1px solid #eee;padding-top:4px">
+                {cand.notes[:120]}{"…" if len(cand.notes) > 120 else ""}
+              </p>
+              <p style="margin:4px 0 0 0;font-size:9px;color:#999">
+                ⚠ Decision-support candidate only — not an official relocation site.
+              </p>
+            </div>
+            """
+
+            # Star marker for rank-1, circle for others
+            radius = 10 if rank == 0 else 7
+            color  = "#27ae60" if rank == 0 else "#52be80"
+
+            folium.CircleMarker(
+                location=[cand.centroid_lat, cand.centroid_lon],
+                radius=radius,
+                color="#1e8449",
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.85,
+                weight=2,
+                tooltip=folium.Tooltip(tooltip_html, sticky=True),
+                popup=folium.Popup(popup_html, max_width=280),
+            ).add_to(fg)
+
+            # Label the candidate with its letter
+            try:
+                folium.Marker(
+                    location=[cand.centroid_lat, cand.centroid_lon],
+                    icon=folium.DivIcon(
+                        html=f'<div style="font-size:9px;font-weight:bold;color:white;'
+                             f'background:#27ae60;border-radius:50%;width:14px;height:14px;'
+                             f'display:flex;align-items:center;justify-content:center;'
+                             f'border:1px solid #1e8449">{label}</div>',
+                        icon_size=(14, 14),
+                        icon_anchor=(7, 7),
+                    ),
+                ).add_to(fg)
+            except Exception:
+                pass   # DivIcon sometimes not available — skip
+
+    fg.add_to(folium_map)
+    return folium_map

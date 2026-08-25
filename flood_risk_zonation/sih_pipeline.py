@@ -3,14 +3,18 @@ PRAVAAH — Habitation Intelligence Pipeline Orchestrator.
 
 Extends the hazard analysis engine with the full habitation intelligence layer:
 settlement ingestion → exposure analysis → vulnerability assessment →
-carrying-capacity assessment → relocation priority scoring.
+carrying-capacity assessment → relocation priority scoring →
+spatial zone classification → relocation candidate discovery →
+agentic decision support.
 
 Architecture:
   FloodRiskPipeline.run()      (Phase 1 — hazard analysis)
           ↓
   SIHPipeline.run_sih_stages() (Phase 2 — habitation intelligence)
           ↓
-  SIHAnalysisResult            (combined output)
+  SIHPipeline.run_phase3()     (Phase 3 — zones + candidates + agents)
+          ↓
+  FullSIHResult                (combined output)
 
 The hazard engine is never modified — this pipeline adds new stages
 exclusively downstream of FloodRiskResult.
@@ -33,6 +37,7 @@ from flood_risk_zonation.models import (
     CarryingCapacityResult,
     ExposureResult,
     FloodRiskResult,
+    FullSIHResult,
     SIHAnalysisResult,
     VulnerabilityResult,
 )
@@ -332,3 +337,121 @@ class SIHPipeline:
             relocation_results=relocation_results,
             sih_duration_seconds=duration,
         )
+
+    def run_phase3(
+        self,
+        sih_result: SIHAnalysisResult,
+        progress_callback: ProgressCallback = None,
+        run_agents: bool = True,
+        agent_priority_filter: tuple = ("CRITICAL", "HIGH", "MEDIUM", "LOW"),
+        adjacency: str = "8-neighbour",
+    ) -> "FullSIHResult":
+        """
+        Run Phase 3: spatial zone classification, relocation candidate
+        discovery, and (optionally) agentic decision-support analysis.
+
+        This method is additive — it wraps SIHAnalysisResult in a FullSIHResult
+        without modifying the underlying hazard or habitation data.
+
+        Parameters
+        ----------
+        sih_result : SIHAnalysisResult
+            Output of run_sih_stages().
+        progress_callback : Callable | None
+        run_agents : bool
+            If True, invoke the agentic orchestrator for each habitation.
+            Set False to skip LLM calls and only compute zones + candidates.
+        agent_priority_filter : tuple[str, ...]
+            Only analyse habitations with these priority classes.
+        adjacency : str
+            "8-neighbour" (default) or "4-neighbour" for zone classification.
+
+        Returns
+        -------
+        FullSIHResult
+        """
+        from flood_risk_zonation.spatial_zones.classifier import (
+            classify_spatial_zones,
+            get_zone_for_habitation,
+        )
+        from flood_risk_zonation.relocation.candidates import find_relocation_candidates
+        from flood_risk_zonation.agents.orchestrator import PravaahOrchestrator
+
+        def _cb(msg: str) -> None:
+            if progress_callback:
+                progress_callback(msg)
+
+        t0 = time.time()
+        scored_grid = sih_result.flood_risk_result.scored_grid
+
+        # ── Stage 6: Spatial zone classification ──────────────────────────────
+        _cb("🗺️ Classifying spatial zones (RED/YELLOW/GREEN)…")
+        zoned_grid = classify_spatial_zones(scored_grid, adjacency=adjacency)
+
+        # ── Stage 7: Assign zone to each habitation ───────────────────────────
+        habitation_zones: dict[str, str] = {}
+        for exp in sih_result.exposure_results:
+            zone = get_zone_for_habitation(exp.lat, exp.lon, zoned_grid)
+            habitation_zones[exp.hab_id] = zone
+
+        # ── Stage 8: Relocation candidate discovery ───────────────────────────
+        _cb("🔍 Discovering relocation candidates…")
+        relocation_candidates: dict[str, list] = {}
+        cap_map = {c.hab_id: c for c in sih_result.capacity_results}
+
+        # Only discover candidates for HIGH/CRITICAL habitations
+        for rel in sih_result.relocation_results:
+            if rel.priority_class not in ("HIGH", "CRITICAL"):
+                continue
+            exp = sih_result.get_exposure_by_id(rel.hab_id)
+            if exp is None:
+                continue
+            cap = cap_map.get(rel.hab_id)
+            candidates = find_relocation_candidates(
+                hab_lat=exp.lat,
+                hab_lon=exp.lon,
+                hab_id=rel.hab_id,
+                hab_name=rel.name or exp.name or "Unnamed",
+                zoned_grid=zoned_grid,
+                source_capacity=cap,
+                search_radius_km=10.0,
+                max_candidates=5,
+            )
+            relocation_candidates[rel.hab_id] = candidates
+            logger.debug(
+                "Candidates for %s: %d found", rel.hab_id, len(candidates)
+            )
+
+        # Assemble FullSIHResult (needed before agents)
+        full_result = FullSIHResult(
+            sih_result=sih_result,
+            zoned_grid=zoned_grid,
+            habitation_zones=habitation_zones,
+            relocation_candidates=relocation_candidates,
+            agent_decisions={},
+            phase3_duration_seconds=time.time() - t0,
+        )
+
+        # ── Stage 9: Agentic decision support ─────────────────────────────────
+        if run_agents and sih_result.relocation_results:
+            _cb("🤖 Running agentic decision support…")
+            orchestrator = PravaahOrchestrator(full_result, verbose=False)
+            agent_decisions = orchestrator.analyse_all(
+                priority_filter=agent_priority_filter,
+                max_habitations=50,
+            )
+            full_result.agent_decisions = agent_decisions
+
+        full_result.phase3_duration_seconds = time.time() - t0
+        logger.info(
+            "Phase 3 complete in %.1fs — "
+            "RED=%d  YELLOW=%d  GREEN=%d  "
+            "candidates=%d habitations  agents=%d decisions",
+            full_result.phase3_duration_seconds,
+            full_result.red_zone_count,
+            full_result.yellow_zone_count,
+            full_result.green_zone_count,
+            len(relocation_candidates),
+            len(full_result.agent_decisions),
+        )
+        return full_result
