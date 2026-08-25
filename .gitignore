@@ -1,0 +1,77 @@
+﻿# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# ── Secrets / credentials — NEVER COMMIT ─────────────────────────────────────
+.env
+.env.*
+!.env.example
+secrets.json
+credentials.json
+*.key
+*.pem
+*.p12
+*.pfx
+*.token
+*.secret
+id_rsa
+id_ed25519
+.streamlit/secrets.toml
+
+# ── Data files ────────────────────────────────────────────────────────────────
+# Large TIF files (rainfall) excluded; small elevation tiles kept
+data/rainfall/*.tif
+data/cache/
+model/artifacts/
+outputs/
+
+# Keep small GeoJSON data files
+!data/water_bodies/
+!data/drainage_lines/
+!data/elevation/*.tif
+!data/landmask/
+
+# ── Coverage / test artefacts ─────────────────────────────────────────────────
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.hypothesis/
+
+# ── Type checker / linter caches ─────────────────────────────────────────────
+.mypy_cache/
+.ruff_cache/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Logs / temp ───────────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+
+# ── Kiro / agent workspace files ─────────────────────────────────────────────
+.kiro/

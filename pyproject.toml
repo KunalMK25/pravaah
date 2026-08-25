@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flood-risk-zonation"
+version = "0.1.0"
+description = "ML-powered geospatial web app for micro-level flood risk zone mapping"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Kunal MK" }
+]
+keywords = ["flood", "risk", "gis", "geospatial", "machine-learning", "streamlit"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+dependencies = [
+    "streamlit>=1.35",
+    "folium>=0.17",
+    "scikit-learn>=1.4",
+    "lightgbm>=4.3",
+    "geopandas>=0.14",
+    "rasterio>=1.3",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "pyproj>=3.6",
+    "joblib>=1.3",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "scipy>=1.11",
+    "shapely>=2.0",
+    "reportlab>=4.0",
+    "requests>=2.31",
+    "tenacity>=8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "hypothesis>=6.100",
+]
+
+[project.urls]
+Homepage = "https://github.com/KunalMK25/flood-risk-zonation"
+"Live Demo" = "https://flood-risk-zonation-ezw8ngm5igpy6egpdmgsqw.streamlit.app/"
+"Bug Tracker" = "https://github.com/KunalMK25/flood-risk-zonation/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["flood_risk_zonation*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--cov=flood_risk_zonation --cov-report=term-missing"
