@@ -131,7 +131,7 @@ if run_button:
     try:
         bbox = offline_region.bbox if offline_region else BoundingBox(float(min_lon),float(min_lat),float(max_lon),float(max_lat))
         config = PipelineConfig(cell_size_meters=float(cell_size),model_type=selected_model_type,
-            rf_n_estimators=100,low_threshold=float(low_threshold),medium_threshold=float(medium_threshold),
+            rf_n_estimators=50,cv_folds=3,low_threshold=float(low_threshold),medium_threshold=float(medium_threshold),
             use_cache=False,allow_network=not use_offline)
         if not use_offline:
             err = validate_bbox_size(bbox)

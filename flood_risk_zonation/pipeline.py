@@ -470,18 +470,44 @@ class FloodRiskPipeline:
 
             already_water = result["risk_class"].values == "Water"
             ocean_mask = np.zeros(len(result), dtype=bool)
-            for i, (_, r) in enumerate(result.iterrows()):
-                if already_water[i]:
-                    continue
-                try:
-                    pt = Point(r["centroid_lon"], r["centroid_lat"])
-                    if not land_geom.contains(pt):
-                        ocean_mask[i] = True
-                except Exception as _cell_exc:
-                    logger.warning(
-                        "Ocean_Detector: cell %d geometry error (%s) — treating as land.",
-                        i, _cell_exc,
-                    )
+
+            # Vectorised ocean detection: build a GeoSeries of centroid Points
+            # and use .within(land_geom) instead of a Python-level per-cell loop.
+            # Semantics are identical to the original loop — cells whose centroid
+            # is NOT within the land polygon are marked as ocean.
+            try:
+                centroid_pts = gpd.GeoSeries(
+                    [Point(lon, lat)
+                     for lon, lat in zip(
+                         result["centroid_lon"].values,
+                         result["centroid_lat"].values,
+                     )],
+                    crs="EPSG:4326",
+                )
+                # .within() returns a boolean Series; negate to get "not land"
+                not_land = ~centroid_pts.within(land_geom)
+                # Preserve original behaviour: cells already classified Water
+                # are skipped (their existing classification is kept)
+                ocean_mask = not_land.values & ~already_water
+            except Exception as _vec_exc:
+                logger.warning(
+                    "Ocean_Detector vectorised path failed (%s) — "
+                    "falling back to per-cell loop.",
+                    _vec_exc,
+                )
+                # Fallback: original per-cell loop
+                for i, (_, r) in enumerate(result.iterrows()):
+                    if already_water[i]:
+                        continue
+                    try:
+                        pt = Point(r["centroid_lon"], r["centroid_lat"])
+                        if not land_geom.contains(pt):
+                            ocean_mask[i] = True
+                    except Exception as _cell_exc:
+                        logger.warning(
+                            "Ocean_Detector: cell %d geometry error (%s) — treating as land.",
+                            i, _cell_exc,
+                        )
 
             if ocean_mask.any():
                 result.loc[ocean_mask, "risk_class"] = "Water"

@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Maximum number of cells that receive interactive explainability
 # (tooltip + popup). Beyond this, performance degrades noticeably.
-_MAX_EXPLAINABLE_CELLS = 500
+_MAX_EXPLAINABLE_CELLS = 100
 
 
 class FloodRiskMapBuilder:
