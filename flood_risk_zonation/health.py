@@ -74,6 +74,13 @@ def _check_llm() -> dict:
             if key else
             {"status": "UNAVAILABLE", "detail": "ANTHROPIC_API_KEY not set"}
         )
+    if provider == "groq":
+        key = os.environ.get("GROQ_API_KEY", "")
+        return (
+            {"status": "AVAILABLE", "detail": "Groq key configured"}
+            if key else
+            {"status": "UNAVAILABLE", "detail": "GROQ_API_KEY not set"}
+        )
     return {"status": "UNAVAILABLE", "detail": f"Unknown provider: {provider}"}
 
 

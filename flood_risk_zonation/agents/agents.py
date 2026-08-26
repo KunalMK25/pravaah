@@ -57,6 +57,8 @@ def _llm_available() -> bool:
         return bool(os.environ.get("OPENAI_API_KEY"))
     if _PROVIDER == "anthropic":
         return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if _PROVIDER == "groq":
+        return bool(os.environ.get("GROQ_API_KEY"))
     return False
 
 
@@ -95,6 +97,23 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
                 messages=[{"role": "user", "content": user_message}],
             )
             return resp.content[0].text.strip()
+
+        if _PROVIDER == "groq":
+            from groq import Groq
+            client = Groq(
+                api_key=os.environ.get("GROQ_API_KEY"),
+                timeout=_LLM_TIMEOUT_S,
+            )
+            resp = client.chat.completions.create(
+                model=os.environ.get("PRAVAAH_GROQ_MODEL", "llama3-8b-8192"),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_message},
+                ],
+                max_tokens=_MAX_TOKENS,
+                temperature=0.1,
+            )
+            return resp.choices[0].message.content.strip()
 
     except Exception as exc:
         logger.warning("LLM call failed (%s): %s", _PROVIDER, exc)

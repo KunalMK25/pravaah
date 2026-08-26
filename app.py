@@ -6,6 +6,10 @@ Run with: streamlit run app.py
 """
 from __future__ import annotations
 import io, logging, os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -26,7 +30,7 @@ st.set_page_config(page_title="PRAVAAH-AI — Hazard & Habitation Intelligence",
                    page_icon="\U0001f30a", layout="wide")
 
 # ── Sidebar ─────────────────────────────────────────────────────────────────
-st.st.sidebar.title("\U0001f30a PRAVAAH-AI")
+st.sidebar.title("\U0001f30a PRAVAAH-AI")
 st.sidebar.caption("Predictive Risk & Vulnerability Assessment for At-Risk Habitations (PRAVAAH-AI)")
 st.sidebar.markdown("---")
 
@@ -76,7 +80,8 @@ run_validation = st.sidebar.checkbox("\U0001f4da Historical Validation", value=F
 
 _llm_provider = os.environ.get("PRAVAAH_LLM_PROVIDER","none").lower()
 _has_llm = ((_llm_provider=="openai" and bool(os.environ.get("OPENAI_API_KEY"))) or
-            (_llm_provider=="anthropic" and bool(os.environ.get("ANTHROPIC_API_KEY"))))
+            (_llm_provider=="anthropic" and bool(os.environ.get("ANTHROPIC_API_KEY"))) or
+            (_llm_provider=="groq" and bool(os.environ.get("GROQ_API_KEY"))))
 _weather_key = bool(os.environ.get("OPENWEATHER_API_KEY","").strip())
 if _has_llm:
     st.sidebar.markdown(f'<p style="color:#2ecc71;font-size:11px;text-align:center">\U0001f916 AI: {_llm_provider.title()}</p>', unsafe_allow_html=True)
@@ -344,7 +349,8 @@ with tab_habs:
                 hce={"High":"\U0001f534","Medium":"\U0001f7e1","Low":"\U0001f7e2","Water":"\U0001f535"}
                 st.markdown(f"Hazard: {hce.get(e.hazard_class,'')} {e.hazard_class} ({e.hazard_score:.1f}/100)")
                 pop_s=f"{e.population_exposed:,} *(OSM)*" if e.population_source=="osm_tag" and e.population_exposed else "**UNKNOWN**"
-                st.markdown(f"Population: {pop_s} | Red Zone: {'Yes \U0001f534' if e.is_in_red_zone else 'No'}")
+                red_zone_label = "Yes 🔴" if e.is_in_red_zone else "No"
+                st.markdown(f"Population: {pop_s} | Red Zone: {red_zone_label}")
             with cR:
                 if rel:
                     st.markdown(f"Priority: {PEMOJI.get(rel.priority_class,'')} **{rel.priority_class}**")
@@ -458,13 +464,23 @@ with tab_fc:
             zc=ZCOLOR.get(h.spatial_zone,"#999")
             col.markdown(f"**{h.horizon_h}h**")
             col.markdown(f"<span style='color:{zc};font-weight:bold'>{h.spatial_zone}</span>",unsafe_allow_html=True)
-            col.metric("Rain (mm)",f"{h.forecast_rainfall_mm:.1f}")
-            col.metric("Δ Risk",f"{h.risk_change:+.1f}")
+            # Fix: avoid -0.0 display; show "N/A" when forecast rainfall is genuinely unavailable
+            _rain_mm = h.forecast_rainfall_mm
+            if _rain_mm < 0:
+                _rain_str = "N/A"
+            else:
+                _rain_val = 0.0 if _rain_mm == 0.0 else _rain_mm   # normalise -0.0 → 0.0
+                _rain_str = f"{_rain_val:.1f}"
+            col.metric("Rain (mm)", _rain_str)
+            # Fix: normalise -0.0 risk change to 0.0
+            _rc = h.risk_change if h.risk_change != 0.0 else 0.0
+            col.metric("\u0394 Risk", f"{_rc:+.1f}")
             col.caption(f"Conf: {h.confidence}")
         fig,ax=plt.subplots(figsize=(8,3))
         hs=[h.horizon_h for h in forecast_result.horizons]
         baselines=[h.baseline_risk_score for h in forecast_result.horizons]
-        adjusteds=[h.adjusted_risk_score for h in forecast_result.horizons]
+        # Normalise any -0.0 to 0.0 to avoid misleading chart artefacts
+        adjusteds=[0.0 if h.adjusted_risk_score == 0.0 else h.adjusted_risk_score for h in forecast_result.horizons]
         ax.plot(hs,baselines,"--",color="#3498db",label="Baseline")
         ax.plot(hs,adjusteds,"-o",color="#e74c3c",label="Forecast-adjusted")
         ax.fill_between(hs,baselines,adjusteds,alpha=0.2,color="#e74c3c")
