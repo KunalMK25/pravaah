@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/pravaah_ai_logo.svg" alt="PRAVAAH-AI Logo" width="340"/>
+  <img src="assets/pravaah-ai-logo.png" alt="PRAVAAH-AI — Predictive Risk & Vulnerability Assessment for At-Risk Habitations" width="600"/>
 </div>
 
 # PRAVAAH-AI

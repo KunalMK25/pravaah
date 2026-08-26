@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="PRAVAAH-AI — Hazard & Habitation Intelligence",
-                   page_icon="\U0001f30a", layout="wide")
+                   page_icon="assets/pravaah-ai-icon.png", layout="wide")
 
 # ── Sidebar ─────────────────────────────────────────────────────────────────
 st.sidebar.title("\U0001f30a PRAVAAH-AI")
