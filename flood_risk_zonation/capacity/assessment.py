@@ -9,10 +9,11 @@ habitation if they need to evacuate or relocate?"
 Components assessed:
   1. nearby_safe_area_km2   — low-risk land within search_radius_km
                                (not Water, not High-risk)
-  2. nearest_healthcare_km  — straight-line distance to nearest OSM hospital
-                               or clinic; -1 if none found
-  3. nearest_road_km        — straight-line distance to nearest OSM highway
-                               (primary | secondary | trunk | motorway); -1 if none
+  2. nearest_healthcare_km  — network distance (or straight-line fallback) to
+                               nearest OSM hospital or clinic; -1 if none found
+  3. nearest_road_km        — network distance (or straight-line fallback) to
+                               nearest OSM highway (primary | secondary | trunk |
+                               motorway); -1 if none
   4. shelter_capacity       — curated or "unavailable" (not fabricated)
 
 Composite capacity_score = weighted average of normalised components.
@@ -26,6 +27,12 @@ Status thresholds (documented):
 Healthcare and road data: fetched via OSM Overpass (same architecture as
 the water-body ingest module — cached, retried, gracefully degraded).
 Results are cached. Fallback to -1 (unknown) on failure.
+
+ROUTING (NEW):
+  Where available, network distances are calculated using shortest-path
+  routing on the OSM road network graph. If routing fails, the system
+  gracefully falls back to straight-line (haversine) distance. The routing
+  method is tracked via provenance in the result notes.
 """
 from __future__ import annotations
 
@@ -49,6 +56,11 @@ from tenacity import (
 
 from flood_risk_zonation.config import BoundingBox
 from flood_risk_zonation.models import CarryingCapacityResult, ExposureResult
+from flood_risk_zonation.utils.routing import (
+    NetworkDistance,
+    build_road_graph,
+    shortest_network_distance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +214,11 @@ def _load_roads(
     cache_dir: Path,
     allow_network: bool,
 ) -> list[tuple[float, float]]:
-    """Return list of (lat, lon) midpoints of major road segments in bbox."""
+    """
+    Return list of (lat, lon) midpoints of major road segments in bbox.
+    
+    Also caches full geometry for potential routing use.
+    """
     bkey = f"{bbox.min_lon:.4f}_{bbox.min_lat:.4f}_{bbox.max_lon:.4f}_{bbox.max_lat:.4f}"
     cache_path = cache_dir / f"roads_{bkey}.json"
 
@@ -228,16 +244,17 @@ def _load_roads(
     for el in raw.get("elements", []):
         geom = el.get("geometry", [])
         if geom:
-            # Use the midpoint of the first road segment as representative
-            mid = geom[len(geom) // 2]
-            points.append({"lat": float(mid["lat"]), "lon": float(mid["lon"])})
+            # Sample multiple points from the geometry to better represent road network
+            # Use ~2 km spacing (approx 0.018 degrees)
+            for coord in geom:
+                points.append({"lat": float(coord["lat"]), "lon": float(coord["lon"])})
 
     try:
         cache_path.write_text(json.dumps(points), encoding="utf-8")
     except Exception:
         pass
 
-    logger.info("Fetched %d road segments.", len(points))
+    logger.info("Fetched %d road geometry points.", len(points))
     return [(p["lat"], p["lon"]) for p in points]
 
 
@@ -245,12 +262,35 @@ def _nearest_km(
     hab_lat: float,
     hab_lon: float,
     points: list[tuple[float, float]],
-) -> float:
-    """Return distance in km to the nearest point, or -1 if none available."""
+    road_graph=None,
+) -> tuple[float, str]:
+    """
+    Return (distance_km, method) tuple.
+    
+    Distance is in km to the nearest point.
+    Method is one of: 'network_routing', 'straight_line_fallback', 'unavailable'.
+    
+    Returns (-1.0, 'unavailable') if no points available.
+    Uses routing if graph is available, otherwise falls back to haversine.
+    """
     if not points:
-        return -1.0
+        return -1.0, "unavailable"
+    
+    # Attempt routing if graph provided
+    if road_graph is not None:
+        try:
+            result = shortest_network_distance(
+                hab_lat, hab_lon, points,
+                graph=road_graph,
+                allow_fallback=True
+            )
+            return result.distance_km, result.method
+        except Exception as e:
+            logger.debug("Routing error: %s; using fallback", e)
+    
+    # Fallback to haversine
     distances = [_haversine_km(hab_lat, hab_lon, lat, lon) for lat, lon in points]
-    return round(min(distances), 3)
+    return round(min(distances), 3), "straight_line_fallback"
 
 
 def _compute_safe_area(
@@ -364,11 +404,20 @@ def assess_capacity(
 
     # 2. Healthcare facilities
     hc_points = _load_healthcare(infra_bbox, cache_path, allow_network)
-    nearest_hc_km = _nearest_km(exposure.lat, exposure.lon, hc_points)
-
-    # 3. Roads
+    
+    # 3. Roads (and build graph for routing)
     road_points = _load_roads(infra_bbox, cache_path, allow_network)
-    nearest_road_km = _nearest_km(exposure.lat, exposure.lon, road_points)
+    road_graph = build_road_graph(road_points) if road_points else None
+
+    # 4. Calculate distances with routing
+    nearest_hc_km, hc_method = _nearest_km(
+        exposure.lat, exposure.lon, hc_points,
+        road_graph=road_graph
+    )
+    nearest_road_km, road_method = _nearest_km(
+        exposure.lat, exposure.lon, road_points,
+        road_graph=road_graph
+    )
 
     # ── Normalise to [0, 1] per component (higher = better capacity) ──────────
     # Safe area: 0 → 0, 5 km² → 0.5, 10+ km² → 1.0 (log-scaled)
@@ -396,21 +445,22 @@ def assess_capacity(
     score = round(max(0.0, min(1.0, score)), 4)
     status = _capacity_status(score)
 
-    # ── Build notes string ────────────────────────────────────────────────────
+    # ── Build notes string with provenance ────────────────────────────────────
     notes_parts = [
         f"Safe area within {search_radius_km:.0f}km: {safe_area_km2:.2f} km²",
     ]
     if nearest_road_km >= 0:
-        notes_parts.append(f"Nearest major road: {nearest_road_km:.1f} km")
+        notes_parts.append(f"Nearest major road: {nearest_road_km:.1f} km ({road_method})")
     else:
         notes_parts.append("Nearest major road: not found in area")
     if nearest_hc_km >= 0:
-        notes_parts.append(f"Nearest healthcare: {nearest_hc_km:.1f} km")
+        notes_parts.append(f"Nearest healthcare: {nearest_hc_km:.1f} km ({hc_method})")
     else:
         notes_parts.append("Nearest healthcare: not found in area")
 
     logger.debug(
-        "Capacity: %s → score=%.3f status=%s", exposure.hab_id, score, status
+        "Capacity: %s → score=%.3f status=%s (road=%s, hc=%s)", 
+        exposure.hab_id, score, status, road_method, hc_method
     )
 
     return CarryingCapacityResult(

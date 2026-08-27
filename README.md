@@ -9,7 +9,7 @@
 [![Tests](https://github.com/KunalMK25/pravaah/actions/workflows/test.yml/badge.svg)](https://github.com/KunalMK25/pravaah/actions/workflows/test.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Tests](https://img.shields.io/badge/tests-509%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-538%20passing-brightgreen)
 
 **PRAVAAH-AI** is an AI-powered geospatial decision-support system that identifies hazard-based red zones, evaluates vulnerable habitations, assesses exposure and carrying-capacity stress, and prioritises intervention or relocation using explainable spatial intelligence.
 
@@ -147,7 +147,7 @@ PRAVAAH-AI is explicit about data quality at every stage:
 - Relocation candidates are **decision-support recommendations** — not officially designated sites
 - GREEN zones are **lower-risk areas** — not guaranteed safe
 - Shelter capacity is **unavailable** — no curated national dataset integrated
-- Road/healthcare distances are **straight-line** (Euclidean), not routed
+- Road/healthcare distances are calculated using **routing-aware network distances where available** (networkx-based shortest-path on OSM road graph), with explicit **fallback to straight-line (Haversine) distance** when network data is unavailable or disconnected. Provenance is tracked as `"network_routing"` or `"straight_line_fallback"` in capacity notes.
 
 ---
 
@@ -176,7 +176,7 @@ cp .env.example .env
 
 ```bash
 python -m pytest tests/ -q --no-cov
-# Expected: 509 passed, 0 failed
+# Expected: 538 passed, 0 failed
 ```
 
 ---
@@ -252,7 +252,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment instructions.
 
 1. Municipal hydraulic capacity measurements are unavailable; the system uses mapped OSM drainage infrastructure (drain, canal, stream, and river linestrings) as a spatial drainage proxy. Dense nearby infrastructure → higher proxy score; absent infrastructure → synthetic fallback (population-inverse heuristic). Provenance is reported in `data_provenance["drainage"]`: `"osm_proxy"` or `"synthetic_fallback"`
 2. Population from OSM is sparse for many Indian settlements — many show UNKNOWN
-3. Road and healthcare distances are straight-line only — routing would be more accurate
+3. **Road and healthcare accessibility distances** — Routing-aware network distances are calculated where OSM road network data is available. The system builds an undirected road network graph from OSM Overpass queries and computes shortest-path distances between habitations and road/healthcare targets. When network data is unavailable or disconnected, the system gracefully falls back to straight-line (Haversine) distance. Provenance is explicitly tracked in capacity assessment notes: `"network_routing"` or `"straight_line_fallback"`. Limitations: road network may be incomplete in remote areas, healthcare facilities are matched to nearest road node (not routed individually), and routing uses a simplified undirected graph (no one-way or turn restrictions).
 4. Weather data is sourced from OpenWeatherMap; the flood-risk forecast is a rainfall-adjusted estimate — not a physically-based hydrological simulation
 5. Historical validation uses coarse approximate polygons (~1 km accuracy)
 6. Habitation detection combines three OSM layers — named settlement place nodes, residential building footprints (strict allowlist: house/residential/apartments/detached/semidetached_house/terrace/bungalow/dormitory/hut/cabin), and residential landuse polygons — fetched in a single cached Overpass request. Building centroids within ~50 m of a place node are deduplicated. Non-residential buildings (industrial, warehouse, commercial, schools, hospitals, etc.) are excluded. Per-record provenance is `"osm_overpass"` / `"osm_building"` / `"osm_landuse"` / `"fallback"`. Coverage remains dependent on the completeness of OpenStreetMap mapping in the selected study area.
