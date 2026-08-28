@@ -170,6 +170,14 @@ def _cluster_nearby_cells(
     risk_scores = grid["risk_score"].values if "risk_score" in grid.columns else np.zeros(len(grid))
     pop_density = grid["population_density"].values if "population_density" in grid.columns else np.zeros(len(grid))
     cell_ids_col = grid["cell_id"].values if "cell_id" in grid.columns else np.array([str(i) for i in range(len(grid))])
+    # water_proximity_score column: set by the proximity boost step in pipeline.
+    # Records the water-proximity boost applied to each cell (0 = far from water;
+    # 100 = immediately adjacent to water). Used to penalise water-close candidates.
+    water_prox = (
+        grid["water_proximity_score"].values
+        if "water_proximity_score" in grid.columns
+        else np.zeros(len(grid))
+    )
 
     for cluster_num, cell_idx_list in enumerate(areas):
         c_lats = glat[cell_idx_list]
@@ -180,6 +188,7 @@ def _cluster_nearby_cells(
         c_scores = risk_scores[cell_idx_list]
         c_pop = pop_density[cell_idx_list]
         c_ids = [str(cell_ids_col[i]) for i in cell_idx_list]
+        c_water_prox = water_prox[cell_idx_list]
 
         # Estimate area from cell count
         # Use grid geometry area if available, else estimate from cell count × ~0.25 km²/cell (500m cells)
@@ -197,15 +206,16 @@ def _cluster_nearby_cells(
             continue
 
         summaries.append({
-            "cluster_id":       f"cand_{cluster_num:03d}",
-            "centroid_lat":     round(c_center_lat, 6),
-            "centroid_lon":     round(c_center_lon, 6),
-            "distance_km":      round(c_dist, 3),
-            "area_km2":         round(area_km2, 4),
-            "mean_hazard_score":round(float(c_scores.mean()), 2),
-            "mean_pop_density": round(float(c_pop.mean()), 2),
-            "cell_count":       len(cell_idx_list),
-            "cell_ids":         c_ids,
+            "cluster_id":              f"cand_{cluster_num:03d}",
+            "centroid_lat":            round(c_center_lat, 6),
+            "centroid_lon":            round(c_center_lon, 6),
+            "distance_km":             round(c_dist, 3),
+            "area_km2":                round(area_km2, 4),
+            "mean_hazard_score":       round(float(c_scores.mean()), 2),
+            "mean_pop_density":        round(float(c_pop.mean()), 2),
+            "mean_water_proximity":    round(float(c_water_prox.mean()), 2),
+            "cell_count":              len(cell_idx_list),
+            "cell_ids":                c_ids,
         })
 
     return summaries
@@ -283,9 +293,18 @@ def find_relocation_candidates(
         area    = c["area_km2"]
         hazard  = c["mean_hazard_score"]
         pop_d   = c["mean_pop_density"]
+        # mean_water_proximity: 0 = far from water (preferred for relocation),
+        # 100 = immediately adjacent to water (should be penalised).
+        # Integration: treat as an additive penalty on the hazard component.
+        # A candidate with water_proximity=100 is penalised by +50 effective hazard,
+        # steering selection toward candidates farther from water bodies.
+        water_prox_c = c.get("mean_water_proximity", 0.0)
+        # Effective hazard score: combine the scored risk with water proximity
+        # (water proximity can only raise the effective hazard, never lower it)
+        effective_hazard = min(100.0, hazard + water_prox_c * 0.5)
 
         # Positive factors (higher = better candidate)
-        f_hazard   = _norm(100.0 - hazard, 0.0, 100.0)      # low hazard → high score
+        f_hazard   = _norm(100.0 - effective_hazard, 0.0, 100.0)  # low effective hazard → high score
         f_area     = _norm(area, 0.0, max_area)
         f_distance = _norm(search_radius_km - dist, 0.0, search_radius_km)  # closer → better
         # Infrastructure proxy: candidates near the source habitation get

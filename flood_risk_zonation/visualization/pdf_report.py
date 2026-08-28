@@ -94,7 +94,7 @@ def _vulnerability_analysis(result, area_name: str) -> list[str]:
     if "drainage_capacity" in grid.columns:
         drain_high = grid[grid.risk_class == "High"]["drainage_capacity"].mean() if dist.get("High", 0) > 0 else 0.5
         if drain_high < 0.45:
-            reasons.append(f"Poor drainage infrastructure: High-risk cells have average drainage capacity of {drain_high:.2f}/1.0 — insufficient to handle monsoon runoff.")
+            reasons.append(f"Low drainage infrastructure proxy score: High-risk cells have an average OSM-derived drainage proxy score of {drain_high:.2f}/1.0 (heuristic; not measured municipal capacity) — low score indicates sparse mapped drainage linestrings nearby.")
     if "dist_water_m" in grid.columns:
         dist_high = grid[grid.risk_class == "High"]["dist_water_m"].mean() if dist.get("High", 0) > 0 else 5000
         if dist_high < 1000:
@@ -907,7 +907,7 @@ def export_pdf_report(result, output_path: str | Path, area_name: str = "Study A
     high_dist = grid_nw[grid_nw.risk_class == "High"]["dist_water_m"].mean() if dist.get("High", 0) > 0 else 5000
     recs = [
         f"<b>Immediate (Pre-Monsoon):</b> Install water level sensors at the {dist.get('High', 0)} High-risk cells. "
-        f"{'Clear drainage channels — average drainage capacity in High-risk zones is only ' + str(round(high_drain, 2)) + '/1.0.' if high_drain < 0.45 else 'Maintain existing drainage infrastructure.'}",
+        f"{'Low OSM drainage proxy score in High-risk zones (avg ' + str(round(high_drain, 2)) + '/1.0 — heuristic proxy, not measured hydraulic capacity). Investigate local drainage adequacy on-site.' if high_drain < 0.45 else 'Maintain existing drainage infrastructure.'}",
         f"<b>Short-term (1–3 months):</b> {'Enforce no-construction zones within 200m of water bodies — ' + str(dist.get('Water', 0)) + ' water body cells identified.' if dist.get('Water', 0) > 0 else 'Map local drainage network for improved accuracy.'} "
         f"Upgrade stormwater drainage in High-risk zones.",
         f"<b>Medium-term (3–12 months):</b> Develop community flood early-warning system for {area_name}. "

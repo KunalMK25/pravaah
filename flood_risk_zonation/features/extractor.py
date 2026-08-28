@@ -34,7 +34,7 @@ FEATURE_COLUMNS = [
     "rainfall_mean_mm",
     "rainfall_max_24h_mm",
     "dist_water_m",
-    "drainage_capacity",
+    "drainage_capacity",   # OSM drainage infrastructure proxy score [0, 1]
     "population_density",
     "aspect_deg",
     "curvature",
@@ -108,7 +108,9 @@ def extract_features(
     population_raster : RasterDataset
         Population density raster.
     drainage_data : DrainageDataset
-        Per-cell drainage capacity scores.
+        Per-cell drainage infrastructure proxy scores (OSM-derived when
+        available; synthetic fallback otherwise). ``source`` attribute
+        records which mode was used.
 
     Returns
     -------

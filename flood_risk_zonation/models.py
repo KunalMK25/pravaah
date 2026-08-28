@@ -71,19 +71,38 @@ class RainfallDataset:
 @dataclass
 class DrainageDataset:
     """
-    Per-cell synthetic drainage capacity scores.
+    Per-cell drainage feature scores used by the flood-risk model.
+
+    The ``source`` attribute records whether the scores were derived from
+    real mapped drainage infrastructure (OSM proxy) or a synthetic fallback:
+
+    ``"osm_proxy"``
+        Scores derived from the density and proximity of mapped OSM
+        drainage linestrings (drain, canal, stream, river ways) within a
+        search radius of each cell centroid. Spatially meaningful and
+        deterministic. **Not** a hydraulic capacity measurement — labelled
+        as a drainage infrastructure availability proxy.
+
+    ``"synthetic_fallback"``
+        Scores inversely correlated with population density (or uniform
+        random [0.2, 1.0] if population is absent). Used only when no
+        OSM linestring data is available.
 
     Attributes
     ----------
     capacity_scores : np.ndarray
-        1-D array of drainage capacity scores in [0, 1] — one per grid cell.
-        1.0 = excellent drainage; 0.0 = no drainage capacity.
+        1-D array of drainage proxy scores in [0, 1] — one per grid cell.
+        1.0 = dense nearby mapped drainage infrastructure;
+        0.0 = no nearby mapped drainage features.
     cell_ids : list[str]
         Ordered list of cell identifiers matching capacity_scores.
+    source : str
+        Provenance tag: ``"osm_proxy"`` | ``"synthetic_fallback"``.
     """
 
     capacity_scores: np.ndarray  # per-cell scores in [0, 1]
     cell_ids: list[str]
+    source: str = "synthetic_fallback"
 
 
 @dataclass

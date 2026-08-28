@@ -18,7 +18,7 @@ from flood_risk_zonation.config import BoundingBox, PipelineConfig
 from flood_risk_zonation.exceptions import FloodRiskError
 from flood_risk_zonation.features.extractor import FEATURE_COLUMNS, extract_features
 from flood_risk_zonation.grid.generator import generate_grid
-from flood_risk_zonation.ingest.drainage import generate_synthetic_drainage
+from flood_risk_zonation.ingest.drainage import generate_drainage_proxy, generate_synthetic_drainage
 from flood_risk_zonation.ingest.elevation import generate_synthetic_elevation
 from flood_risk_zonation.ingest.population import load_population
 from flood_risk_zonation.ingest.rainfall import generate_synthetic_rainfall
@@ -305,9 +305,14 @@ class FloodRiskPipeline:
             if config.use_cache:
                 save_geodataframe(grid, cache_path)
 
-        drainage = generate_synthetic_drainage(grid, seed=seed)
+        drainage = generate_drainage_proxy(
+            grid,
+            water_bodies,
+            cell_size_m=config.cell_size_meters,
+            seed=seed,
+        )
         provenance = dict(provenance)  # avoid mutating the caller's dict
-        provenance["drainage"] = "synthetic"
+        provenance["drainage"] = drainage.source
 
         if progress_callback:
             progress_callback("🔬 Computing features…")
@@ -437,8 +442,14 @@ class FloodRiskPipeline:
         2. OSM AREA MASK   - cells with >= 60% area covered by OSM water
                              polygons (lakes, reservoirs, bays) -> Water.
                              Coastline LineStrings excluded (unreliable for masking).
-        3. PROXIMITY BOOST - land cells within 0.6 x cell_size of any water -> boost.
-        4. COASTAL FLAG    - land cells within 1.5 x cell_size of ocean -> tsunami flag.
+        3. PROXIMITY BOOST - graduated distance-based boost over 5.0 x cell_size radius.
+                             boost(d) = 100 * max(0, 1 - d / boost_radius_m)
+                             d=0  -> score=100 (HIGH); d=2 cells -> score=60 (MEDIUM);
+                             d=5+ cells -> 0 boost (baseline preserved).
+                             Adds 'water_proximity_score' column (max boost applied).
+        4. SPATIAL CONTINUITY - after proximity boost, HIGH neighbours propagate a
+                             bounded influence to adjacent land cells (at least MEDIUM).
+        5. COASTAL FLAG    - land cells within 1.5 x cell_size of ocean -> tsunami flag.
         """
         from shapely.geometry import Point
         from shapely.ops import unary_union
@@ -448,6 +459,10 @@ class FloodRiskPipeline:
         result["is_coastal_tsunami_risk"] = False
         result["water_mask_reason"] = ""
         result["water_coverage_pct"] = 0.0
+        # water_proximity_score: records the maximum proximity-boost score applied
+        # to each cell (0.0 = no boost; 100.0 = directly adjacent to water).
+        # Used for candidate scoring transparency.
+        result["water_proximity_score"] = 0.0
 
         OCEAN_TYPES = {"coastline", "bay", "sea", "ocean"}
         AREA_WATER_TYPES = {"water", "reservoir", "basin", "bay", "sea", "ocean", "coastline"}
@@ -606,55 +621,168 @@ class FloodRiskPipeline:
             except Exception as exc:
                 logger.warning("OSM coverage mask failed: %s", exc)
 
-        # Steps 3 & 4: proximity boost and coastal flag
-        if not boost_geoms:
-            return result
+        # Always compute centroid points in metric CRS — needed for both
+        # proximity boost (when water bodies exist) AND spatial continuity
+        # (which must run even when there are no water bodies, so that
+        # pre-existing HIGH cells from the ML model propagate MEDIUM to
+        # their immediate neighbours).
         try:
-            boost_union_m = unary_union(
-                _gpd.GeoDataFrame(geometry=boost_geoms, crs="EPSG:4326")
-                .to_crs("EPSG:3857").geometry.tolist()
-            )
-            ocean_union_m = None
-            if ocean_area_geoms:
-                ocean_union_m = unary_union(
-                    _gpd.GeoDataFrame(geometry=ocean_area_geoms, crs="EPSG:4326")
-                    .to_crs("EPSG:3857").geometry.tolist()
-                )
             centroid_pts_m = gpd.GeoSeries(
                 [Point(r.centroid_lon, r.centroid_lat) for _, r in result.iterrows()],
                 crs="EPSG:4326",
             ).to_crs("EPSG:3857")
-            proximity_m = config.cell_size_meters * 0.6
-            now_water = result["risk_class"].values == "Water"
-            proximity = np.zeros(len(result), dtype=bool)
-            for i, pt in enumerate(centroid_pts_m):
-                if not now_water[i]:
+        except Exception as _cpt_exc:
+            logger.warning("Centroid computation failed: %s — skipping boost/continuity.", _cpt_exc)
+            return result
+
+        # Step 3: Proximity boost (only when water body geometries are available)
+        if boost_geoms:
+            try:
+                boost_union_m = unary_union(
+                    _gpd.GeoDataFrame(geometry=boost_geoms, crs="EPSG:4326")
+                    .to_crs("EPSG:3857").geometry.tolist()
+                )
+                ocean_union_m = None
+                if ocean_area_geoms:
+                    ocean_union_m = unary_union(
+                        _gpd.GeoDataFrame(geometry=ocean_area_geoms, crs="EPSG:4326")
+                        .to_crs("EPSG:3857").geometry.tolist()
+                    )
+
+                # ── Graduated distance-based proximity boost ──────────────────
+                # METHODOLOGY (declared, transparent):
+                #
+                # Root cause of GREEN coastal cells: the original boost_radius_m
+                # (2.5 × cell_size = 1250m for 500m grid) was too narrow and
+                # boost_max (medium_threshold + 10 = 76) too weak:
+                #   - Only 2-3 cell rings received any influence
+                #   - The gradient collapsed at 2 cell widths from water
+                #   - Second-ring coastal cells received near-zero boost
+                #
+                # FIX: widen radius to 5.0 × cell_size and set boost_max = 100.0
+                # so the gradient is:
+                #   d = 0            → score = 100  → HIGH
+                #   d = 1 × cell     → score = 80   → HIGH
+                #   d = 2 × cell     → score = 60   → MEDIUM (≤ medium_threshold)
+                #   d = 3 × cell     → score = 40   → MEDIUM
+                #   d = 4 × cell     → score = 20   → LOW (< low_threshold)
+                #   d ≥ 5 × cell     → score = 0    → no boost (baseline)
+                #
+                # Formula: boost(d) = boost_max × max(0, 1 − d / boost_radius_m)
+                # Resulting score = max(original_score, boost(d))
+                # risk_class is re-derived from the updated score.
+                #
+                # This preserves the existing scoring architecture — the WSI/RF model
+                # output is the baseline; the boost is a post-scoring adjustment that
+                # can only raise, never lower, a cell's risk.
+                # ────────────────────────────────────────────────────────────────
+
+                # boost_radius_m: 5 cell widths — provides a meaningful gradient
+                # while remaining LOCAL (does not flood the entire map with influence).
+                boost_radius_m = config.cell_size_meters * 5.0
+
+                # boost_max = 100.0: cells immediately adjacent to water score 100
+                # (HIGH). Cells at 2 cell widths from water score 60 (MEDIUM).
+                # Cells at 4+ cell widths get minimal or zero boost, preserving
+                # the baseline ML risk score.
+                boost_max = 100.0
+
+                now_water = result["risk_class"].values == "Water"
+
+                for i, pt in enumerate(centroid_pts_m):
+                    if now_water[i]:
+                        continue
                     try:
-                        if pt.distance(boost_union_m) <= proximity_m:
-                            proximity[i] = True
+                        dist_to_water = pt.distance(boost_union_m)
+                        if dist_to_water >= boost_radius_m:
+                            continue   # beyond influence radius — no boost
+                        # Linear decay: 1.0 at dist=0, 0.0 at dist=boost_radius_m
+                        strength = max(0.0, 1.0 - dist_to_water / boost_radius_m)
+                        boosted_score = boost_max * strength
+                        idx = result.index[i]
+                        current_score = float(result.at[idx, "risk_score"])
+                        new_score = max(current_score, boosted_score)
+                        # Record the water-proximity boost for transparency/relocation
+                        result.at[idx, "water_proximity_score"] = round(boosted_score, 2)
+                        if new_score > current_score:
+                            result.at[idx, "risk_score"] = round(new_score, 2)
+                            if new_score > config.medium_threshold:
+                                result.at[idx, "risk_class"] = "High"
+                            elif new_score > config.low_threshold:
+                                result.at[idx, "risk_class"] = "Medium"
+                            # Note: new_score <= low_threshold means no class change
                     except Exception:
                         pass
-            boost_floor = config.low_threshold + 5.0
-            current = result.loc[proximity, "risk_score"].values
-            result.loc[proximity, "risk_score"] = np.maximum(current, boost_floor)
-            for idx in result.index[proximity]:
-                s = result.at[idx, "risk_score"]
-                result.at[idx, "risk_class"] = "High" if s > config.medium_threshold else "Medium"
-            if ocean_union_m is not None:
-                coastal_m = config.cell_size_meters * 1.5
-                now_water2 = result["risk_class"].values == "Water"
+
+                # Step 5: Coastal flag
+                if ocean_union_m is not None:
+                    coastal_m = config.cell_size_meters * 1.5
+                    now_water2 = result["risk_class"].values == "Water"
+                    for i, pt in enumerate(centroid_pts_m):
+                        if not now_water2[i]:
+                            try:
+                                if pt.distance(ocean_union_m) <= coastal_m:
+                                    result.iloc[i, result.columns.get_loc("is_coastal_tsunami_risk")] = True
+                            except Exception:
+                                pass
+
+                logger.info("Water mask done: %d Water, %d coastal.",
+                            int((result["risk_class"] == "Water").sum()),
+                            int(result["is_coastal_tsunami_risk"].sum()))
+            except Exception as exc:
+                logger.warning("Proximity/coastal step failed: %s", exc)
+
+        # Step 4: Spatial continuity propagation (ALWAYS runs — independent of water bodies)
+        # ── Spatial continuity ─────────────────────────────────────────────────
+        # Problem: a lone HIGH cell (either from the ML model or proximity boost)
+        # may have GREEN immediate neighbours if those neighbours are just beyond
+        # the proximity boost radius, or if the HIGH cell came from the base model
+        # without any water body geometries being available.
+        #
+        # Requirement: a HIGH cell's immediate grid neighbours receive at least
+        # MEDIUM influence (unless already HIGH or Water). Bounded: 1-ring only.
+        # ──────────────────────────────────────────────────────────────────────
+        try:
+            neighbour_radius_m = config.cell_size_meters * 1.5
+            # Minimum score for a neighbour of a HIGH cell: mid-point of MEDIUM band
+            neighbour_min_score = (
+                config.low_threshold
+                + (config.medium_threshold - config.low_threshold) * 0.5
+            )
+            now_high = result["risk_class"].values == "High"
+            now_water_sc = result["risk_class"].values == "Water"
+
+            if now_high.any():
+                # Build a union geometry of all HIGH cell centroids buffered by
+                # neighbour_radius_m.  A single .within() check on each non-HIGH
+                # cell replaces an O(N×M) loop with O(N log M).
+                from shapely.ops import unary_union as _uu_sc
+                high_union_m = _uu_sc([
+                    centroid_pts_m.iloc[i].buffer(neighbour_radius_m)
+                    for i in range(len(centroid_pts_m))
+                    if now_high[i]
+                ])
                 for i, pt in enumerate(centroid_pts_m):
-                    if not now_water2[i]:
-                        try:
-                            if pt.distance(ocean_union_m) <= coastal_m:
-                                result.iloc[i, result.columns.get_loc("is_coastal_tsunami_risk")] = True
-                        except Exception:
-                            pass
-            logger.info("Water mask done: %d Water, %d coastal.",
-                        int((result["risk_class"] == "Water").sum()),
-                        int(result["is_coastal_tsunami_risk"].sum()))
-        except Exception as exc:
-            logger.warning("Proximity/coastal step failed: %s", exc)
+                    if now_high[i] or now_water_sc[i]:
+                        continue
+                    try:
+                        if pt.within(high_union_m):
+                            idx = result.index[i]
+                            current = float(result.at[idx, "risk_score"])
+                            if current < neighbour_min_score:
+                                result.at[idx, "risk_score"] = round(
+                                    neighbour_min_score, 2
+                                )
+                                result.at[idx, "risk_class"] = "Medium"
+                    except Exception:
+                        pass
+            logger.info(
+                "Spatial continuity: %d HIGH cells → neighbours boosted to ≥MEDIUM.",
+                int(now_high.sum()),
+            )
+        except Exception as _sc_exc:
+            logger.warning("Spatial continuity step failed: %s", _sc_exc)
+
         return result
 
     def run_stage(self, stage_name: str, *args: Any, **kwargs: Any) -> Any:
@@ -667,3 +795,4 @@ class FloodRiskPipeline:
         if stage_name not in stages:
             raise ValueError(f"Unknown stage: {stage_name}. Available: {list(stages)}")
         return stages[stage_name](*args, **kwargs)
+

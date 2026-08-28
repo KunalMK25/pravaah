@@ -119,7 +119,11 @@ def test_run_from_ingested_data_matches_run_shape():
         {"Low", "Medium", "High", "Water"}
     )
     assert result.analysis_result.method == "ensemble"
-    assert result.data_provenance["drainage"] == "synthetic"
+    assert result.data_provenance["drainage"] in {
+        "osm_proxy",          # OSM drainage linestrings found
+        "synthetic_fallback", # No linestrings available — fallback used
+    }
+
     assert result.data_tier == 3
 
 
