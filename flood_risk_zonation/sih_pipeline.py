@@ -42,6 +42,7 @@ from flood_risk_zonation.models import (
     VulnerabilityResult,
 )
 from flood_risk_zonation.pipeline import FloodRiskPipeline
+from flood_risk_zonation.population.factory import create_population_provider_chain
 from flood_risk_zonation.relocation.priority import score_relocation_priority
 from flood_risk_zonation.vulnerability.scorer import score_vulnerability
 
@@ -234,9 +235,25 @@ class SIHPipeline:
 
         # ── Stage 2: Exposure analysis ─────────────────────────────────────────
         _cb("🔍 Analysing habitation exposure…")
+        
+        # Create population provider chain (Phase 1B)
+        population_chain = create_population_provider_chain(
+            config.population_config if hasattr(config, 'population_config') else {}
+        )
+        
+        # Compute bounding box for population aggregation
+        bbox = (
+            scored_grid["centroid_lon"].min(),
+            scored_grid["centroid_lat"].min(),
+            scored_grid["centroid_lon"].max(),
+            scored_grid["centroid_lat"].max(),
+        )
+        
         exposure_results = analyse_exposure(
             hab_dataset,
             scored_grid,
+            population_chain=population_chain,
+            bbox=bbox,
             low_threshold=config.low_threshold,
             medium_threshold=config.medium_threshold,
         )

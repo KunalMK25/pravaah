@@ -270,9 +270,17 @@ class ExposureResult:
     pct_high_risk : float
         Fraction (0–1) of intersecting cells classified as High or Critical.
     population_source : str
-        "osm_tag" | "estimated" | "UNKNOWN"
+        "osm_tag" | "worldpop" | "regional" | "authoritative" | "unknown"
     population_exposed : Optional[int]
-        Population estimate with appropriate provenance labelling.
+        Population count with appropriate provenance labelling.
+    population_confidence : float
+        [0.0, 1.0] — confidence in population data
+    population_status : str
+        "OBSERVED" | "ESTIMATED" | "CACHED" | "UNAVAILABLE" | "UNKNOWN"
+    population_method : Optional[str]
+        How population was obtained (e.g., "osm_tag_direct", "raster_aggregation")
+    population_metadata : Optional[dict]
+        Full PopulationResult as dict (for API/reports)
     is_in_red_zone : bool
         True when hazard_class is High.
     intersecting_cell_ids : list[str]
@@ -289,7 +297,11 @@ class ExposureResult:
     pct_high_risk: float
     population_source: str
     population_exposed: Optional[int]
-    is_in_red_zone: bool
+    population_confidence: float = 0.0
+    population_status: str = "UNKNOWN"
+    population_method: Optional[str] = None
+    population_metadata: Optional[dict] = None
+    is_in_red_zone: bool = False
     intersecting_cell_ids: list = field(default_factory=list)
 
 

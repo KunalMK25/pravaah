@@ -9,9 +9,9 @@ This module performs a spatial overlay between habitation point locations and
 the scored hazard grid, then assigns each habitation an exposure class.
 
 Population handling:
-  - Real population from OSM tag       → population_source = "osm_tag"
-  - No OSM tag                         → population_source = "UNKNOWN"
-  - (Future: gridded population raster → population_source = "estimated")
+  - Multi-source provider chain (Authoritative → Regional → WorldPop → OSM → Derived → UNKNOWN)
+  - Comprehensive provenance, confidence, and status tracking
+  - Never fabricates population data
 
 Population is never fabricated.
 """
@@ -25,6 +25,7 @@ import geopandas as gpd
 import numpy as np
 
 from flood_risk_zonation.models import ExposureResult, Habitation, HabitationDataset
+from flood_risk_zonation.population.chain import PopulationProviderChain
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,8 @@ def _classify_hazard(hazard_score: float, pct_high: float, low_t: float, med_t: 
 def analyse_exposure(
     habitation_dataset: HabitationDataset,
     scored_grid: gpd.GeoDataFrame,
+    population_chain: Optional[PopulationProviderChain] = None,
+    bbox: Optional[tuple] = None,
     low_threshold: float = 33.0,
     medium_threshold: float = 66.0,
 ) -> list[ExposureResult]:
@@ -81,7 +84,7 @@ def analyse_exposure(
          (within _NEIGHBOUR_CELLS closest matches).
       2. Compute mean hazard_score and pct_high_risk across those cells.
       3. Determine hazard_class from combined score + cell class majority.
-      4. Assign population from OSM tag (or UNKNOWN).
+      4. Get population from provider chain (if provided) or OSM tag (fallback).
       5. Flag is_in_red_zone = (hazard_class == "High").
 
     Parameters
@@ -91,6 +94,11 @@ def analyse_exposure(
     scored_grid : gpd.GeoDataFrame
         Phase 1 pipeline output — must have risk_score, risk_class,
         centroid_lat, centroid_lon, cell_id columns.
+    population_chain : Optional[PopulationProviderChain]
+        Multi-source population provider chain. If None, uses OSM tags only (legacy).
+    bbox : Optional[tuple]
+        Bounding box (min_lon, min_lat, max_lon, max_lat) for population aggregation.
+        Required if population_chain provided.
     low_threshold : float
         Risk score boundary between Low and Medium (default 33).
     medium_threshold : float
@@ -121,6 +129,15 @@ def analyse_exposure(
         else np.array([str(i) for i in range(len(scored_grid))])
     )
 
+    # Ensure bbox for population chain
+    if population_chain and bbox is None:
+        bbox = (
+            scored_grid["centroid_lon"].min(),
+            scored_grid["centroid_lat"].min(),
+            scored_grid["centroid_lon"].max(),
+            scored_grid["centroid_lat"].max(),
+        )
+
     results: list[ExposureResult] = []
 
     for hab in habitation_dataset.habitations:
@@ -144,13 +161,57 @@ def analyse_exposure(
                 [c for c in nearby_classes if c != "Water"] or nearby_classes
             )
 
-            # Population provenance
-            if hab.population is not None and hab.population > 0:
-                pop_exposed: Optional[int] = hab.population
-                pop_source = "osm_tag"
+            # Get population from provider chain or OSM tag (fallback)
+            if population_chain and bbox:
+                pop_result = population_chain.get_population(
+                    hab_id=hab.hab_id,
+                    lat=hab.lat,
+                    lon=hab.lon,
+                    bbox=bbox,
+                )
+                pop_exposed = pop_result.population
+                pop_source = pop_result.provider.value
+                pop_confidence = pop_result.confidence
+                pop_status = pop_result.status.value
+                pop_method = pop_result.method.value if pop_result.method else None
+                pop_metadata = {
+                    "population": pop_result.population,
+                    "source": pop_result.source,
+                    "provider": pop_result.provider.value,
+                    "method": pop_result.method.value if pop_result.method else None,
+                    "status": pop_result.status.value,
+                    "confidence": pop_result.confidence,
+                }
             else:
-                pop_exposed = None
-                pop_source = "UNKNOWN"
+                # Legacy: OSM-only population handling
+                if hab.population is not None and hab.population > 0:
+                    pop_exposed = hab.population
+                    pop_source = "osm_tag"
+                    pop_confidence = 0.60  # OSM baseline confidence
+                    pop_status = "OBSERVED"
+                    pop_method = "osm_tag_direct"
+                    pop_metadata = {
+                        "population": pop_exposed,
+                        "source": "osm_tag",
+                        "provider": "OSM",
+                        "method": "osm_tag_direct",
+                        "status": "OBSERVED",
+                        "confidence": pop_confidence,
+                    }
+                else:
+                    pop_exposed = None
+                    pop_source = "UNKNOWN"
+                    pop_confidence = 0.0
+                    pop_status = "UNKNOWN"
+                    pop_method = None
+                    pop_metadata = {
+                        "population": None,
+                        "source": "unknown",
+                        "provider": "UNKNOWN",
+                        "method": None,
+                        "status": "UNKNOWN",
+                        "confidence": 0.0,
+                    }
 
             results.append(
                 ExposureResult(
@@ -164,6 +225,10 @@ def analyse_exposure(
                     pct_high_risk=round(pct_high, 3),
                     population_source=pop_source,
                     population_exposed=pop_exposed,
+                    population_confidence=pop_confidence,
+                    population_status=pop_status,
+                    population_method=pop_method,
+                    population_metadata=pop_metadata,
                     is_in_red_zone=(hazard_class == "High"),
                     intersecting_cell_ids=nearby_ids,
                 )
