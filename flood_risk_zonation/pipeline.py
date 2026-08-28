@@ -26,6 +26,7 @@ from flood_risk_zonation.ingest.water_bodies import load_water_bodies
 from flood_risk_zonation.models import AnalysisResult, FloodRiskResult
 from flood_risk_zonation.scoring.scorer import FloodRiskScorer
 from flood_risk_zonation.scoring.susceptibility import WeightedSusceptibilityModel, RandomForestSusceptibilityModel, EnsembleSusceptibilityModel
+from flood_risk_zonation.satellite.sentinel1 import load_sentinel1_observation
 from flood_risk_zonation.utils.cache import cache_key, get_cache_path, is_cached, load_geodataframe, save_geodataframe
 from flood_risk_zonation.utils.validation import validate_bounding_box, validate_config
 
@@ -116,6 +117,27 @@ class FloodRiskPipeline:
 
         seed = config.random_seed
 
+        # --- Sentinel-1 satellite observation (optional, metadata-only) ---
+        sentinel1_observation = None
+        try:
+            # Load Sentinel-1 observation from optional input paths
+            # If neither path is provided, returns UNKNOWN gracefully
+            sentinel1_geotiff = getattr(config, 'sentinel1_geotiff_path', None)
+            sentinel1_geojson = getattr(config, 'sentinel1_geojson_path', None)
+            sentinel1_observation = load_sentinel1_observation(
+                bounding_box,
+                geotiff_path=sentinel1_geotiff,
+                geojson_path=sentinel1_geojson,
+            )
+            logger.info(
+                "Sentinel-1 observation status: %s (confidence: %.2f)",
+                sentinel1_observation.observation_status,
+                sentinel1_observation.confidence,
+            )
+        except Exception as exc:
+            logger.warning("Sentinel-1 observation unavailable: %s", exc)
+            sentinel1_observation = None
+
         # --- Data ingestion — use real data if available, else synthetic fallback ---
         logger.info("Ingesting data...")
         provenance: dict[str, str] = {}
@@ -177,6 +199,13 @@ class FloodRiskPipeline:
         population = load_population(bounding_box, data_dir=str(config.cache_dir))
         provenance["population"] = population.source
 
+        # Add Sentinel-1 observation metadata to provenance
+        if sentinel1_observation:
+            provenance["sentinel1_status"] = sentinel1_observation.observation_status
+            provenance["sentinel1_confidence"] = str(sentinel1_observation.confidence)
+            provenance["sentinel1_source"] = sentinel1_observation.source
+            provenance["sentinel1_platform"] = sentinel1_observation.platform
+
         core_real = [
             provenance["elevation"] != "synthetic",
             provenance["rainfall"] != "synthetic",
@@ -192,6 +221,7 @@ class FloodRiskPipeline:
             population=population,
             provenance=provenance,
             data_tier=data_tier,
+            sentinel1_observation=sentinel1_observation,
             progress_callback=progress_callback,
             start_time=t0,
         )
@@ -207,6 +237,7 @@ class FloodRiskPipeline:
         data_tier: int,
         progress_callback: ProgressCallback = None,
         start_time: float | None = None,
+        sentinel1_observation = None,
     ) -> FloodRiskResult:
         """
         Execute the pipeline stages shared by every caller, given

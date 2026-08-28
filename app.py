@@ -70,6 +70,10 @@ selected_model_type = {"Ensemble (WSI + RF)":"ensemble","Weighted Index (WSI)":"
 st.sidebar.subheader("Thresholds")
 low_threshold = st.sidebar.slider("Low/Medium boundary", 10.0, 49.0, 33.0, 1.0)
 medium_threshold = st.sidebar.slider("Medium/High boundary", 51.0, 90.0, 66.0, 1.0)
+st.sidebar.subheader("Satellite Data (Optional)")
+sentinel1_geotiff_path = st.sidebar.text_input("🛰️ Sentinel-1 GeoTIFF (flood mask)", value="", placeholder="e.g., data/sentinel1_flood_mask.tif")
+sentinel1_geojson_path = st.sidebar.text_input("🛰️ Sentinel-1 GeoJSON (polygons)", value="", placeholder="e.g., data/sentinel1_flood.geojson")
+st.sidebar.caption("Leave empty to skip Sentinel-1 satellite data (optional)")
 st.sidebar.subheader("Intelligence Layers")
 run_sih = st.sidebar.checkbox("\U0001f3d8\ufe0f Habitation Analysis", value=True)
 run_phase3 = st.sidebar.checkbox("\U0001f5fa\ufe0f Spatial Zones + Candidates", value=True)
@@ -133,6 +137,9 @@ if run_button:
         config = PipelineConfig(cell_size_meters=float(cell_size),model_type=selected_model_type,
             rf_n_estimators=50,cv_folds=3,low_threshold=float(low_threshold),medium_threshold=float(medium_threshold),
             use_cache=False,allow_network=not use_offline)
+        # Add optional Sentinel-1 paths to config (will be None if not provided)
+        config.sentinel1_geotiff_path = sentinel1_geotiff_path if sentinel1_geotiff_path.strip() else None
+        config.sentinel1_geojson_path = sentinel1_geojson_path if sentinel1_geojson_path.strip() else None
         if not use_offline:
             err = validate_bbox_size(bbox)
             if err: st.error(f"📐 {err}"); st.stop()
@@ -681,6 +688,39 @@ with tab_xai:
 # ── Tab 11: Data & Export ────────────────────────────────────────────────────
 with tab_data:
     if result is not None:
+        # Sentinel-1 Satellite Intelligence
+        if result.data_provenance.get("sentinel1_status"):
+            st.subheader("🛰️ Sentinel-1 Satellite Observation")
+            s1_cols = st.columns(4)
+            s1_status = result.data_provenance.get("sentinel1_status", "UNKNOWN")
+            s1_conf = float(result.data_provenance.get("sentinel1_confidence", 0.0))
+            s1_source = result.data_provenance.get("sentinel1_source", "unknown")
+            s1_platform = result.data_provenance.get("sentinel1_platform", "Unknown")
+            
+            with s1_cols[0]:
+                st.metric("Status", s1_status, delta=None)
+            with s1_cols[1]:
+                st.metric("Confidence", f"{s1_conf:.2f}")
+            with s1_cols[2]:
+                st.metric("Source", s1_source)
+            with s1_cols[3]:
+                st.metric("Platform", s1_platform)
+            
+            if s1_status == "OBSERVED":
+                st.success("✅ Sentinel-1 flood observation is available for this area.")
+            elif s1_status == "UNAVAILABLE":
+                st.warning("⚠️ Sentinel-1 data provider unavailable.")
+            else:
+                st.info("ℹ️ Sentinel-1 observation data not available (UNKNOWN state).")
+            
+            with st.expander("📋 Sentinel-1 Provenance & Limitations"):
+                prov_text = "**Sentinel-1 Observation Metadata:**\n\n"
+                for key, value in result.data_provenance.items():
+                    if key.startswith("sentinel1_"):
+                        prov_text += f"- **{key.replace('sentinel1_', '').title()}**: {value}\n"
+                st.markdown(prov_text)
+                st.caption("Sentinel-1 satellite observations are provided as an optional intelligence layer. They do NOT modify hazard scores, risk zones, relocation priorities, or any existing Phase 0 analysis. This is informational metadata only.")
+        
         st.subheader("Grid Data")
         disp=[c for c in ["cell_id","centroid_lat","centroid_lon"]+FEATURE_COLUMNS+["risk_score","risk_class"] if c in result.scored_grid.columns]
         df=result.scored_grid[disp].copy()
