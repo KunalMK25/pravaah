@@ -29,7 +29,11 @@ from typing import Callable, Optional
 import geopandas as gpd
 import numpy as np
 
-from flood_risk_zonation.capacity.assessment import assess_capacity
+from flood_risk_zonation.capacity.assessment import (
+    assess_capacity,
+    _load_healthcare,
+    _load_roads,
+)
 from flood_risk_zonation.config import BoundingBox, PipelineConfig
 from flood_risk_zonation.exposure.analysis import analyse_exposure
 from flood_risk_zonation.habitation.ingest import load_habitations
@@ -44,6 +48,7 @@ from flood_risk_zonation.models import (
 from flood_risk_zonation.pipeline import FloodRiskPipeline
 from flood_risk_zonation.population.factory import create_population_provider_chain
 from flood_risk_zonation.relocation.priority import score_relocation_priority
+from flood_risk_zonation.utils.routing import build_road_graph
 from flood_risk_zonation.vulnerability.scorer import score_vulnerability
 
 logger = logging.getLogger(__name__)
@@ -269,6 +274,18 @@ class SIHPipeline:
         _cb("🏥 Assessing carrying capacity…")
         area_ranges = _compute_area_reference_ranges(scored_grid)
 
+        # Load infrastructure ONCE for the entire analysis bounding box
+        # to avoid redundant OSM API calls for each habitation
+        from flood_risk_zonation.capacity.assessment import _bbox_expanded
+        infra_bbox = _bbox_expanded(bounding_box, extra_deg=0.08)
+        cache_path = Path(self._capacity_cache_dir)
+        cache_path.mkdir(parents=True, exist_ok=True)
+        
+        # Load healthcare and roads once, then reuse for all habitations
+        hc_points = _load_healthcare(infra_bbox, cache_path, self._allow_network)
+        road_points = _load_roads(infra_bbox, cache_path, self._allow_network)
+        road_graph = build_road_graph(road_points) if road_points else None
+
         capacity_results: list[CarryingCapacityResult] = []
         for exp in exposure_results:
             cap = assess_capacity(
@@ -277,6 +294,9 @@ class SIHPipeline:
                 bounding_box,
                 cache_dir=self._capacity_cache_dir,
                 allow_network=self._allow_network,
+                hc_points=hc_points,
+                road_points=road_points,
+                road_graph=road_graph,
             )
             capacity_results.append(cap)
 

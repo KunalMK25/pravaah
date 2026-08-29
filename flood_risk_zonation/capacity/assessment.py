@@ -367,6 +367,9 @@ def assess_capacity(
     cache_dir: str | Path = "data/cache/capacity",
     allow_network: bool = True,
     search_radius_km: float = _DEFAULT_SAFE_RADIUS_KM,
+    hc_points: Optional[list[tuple[float, float]]] = None,
+    road_points: Optional[list[tuple[float, float]]] = None,
+    road_graph: Optional[object] = None,
 ) -> CarryingCapacityResult:
     """
     Assess carrying capacity for a single habitation.
@@ -385,6 +388,12 @@ def assess_capacity(
         Whether to fetch live OSM data.
     search_radius_km : float
         Radius for nearby safe-area search.
+    hc_points : list of (lat, lon) tuples, optional
+        Pre-loaded healthcare facility locations. If None, will be loaded.
+    road_points : list of (lat, lon) tuples, optional
+        Pre-loaded road points. If None, will be loaded.
+    road_graph : networkx graph, optional
+        Pre-constructed road network graph. If None, will be built.
 
     Returns
     -------
@@ -402,12 +411,15 @@ def assess_capacity(
         exposure.lat, exposure.lon, scored_grid, radius_km=search_radius_km
     )
 
-    # 2. Healthcare facilities
-    hc_points = _load_healthcare(infra_bbox, cache_path, allow_network)
+    # 2. Healthcare facilities (use provided or load)
+    if hc_points is None:
+        hc_points = _load_healthcare(infra_bbox, cache_path, allow_network)
     
     # 3. Roads (and build graph for routing)
-    road_points = _load_roads(infra_bbox, cache_path, allow_network)
-    road_graph = build_road_graph(road_points) if road_points else None
+    if road_points is None:
+        road_points = _load_roads(infra_bbox, cache_path, allow_network)
+    if road_graph is None:
+        road_graph = build_road_graph(road_points) if road_points else None
 
     # 4. Calculate distances with routing
     nearest_hc_km, hc_method = _nearest_km(
