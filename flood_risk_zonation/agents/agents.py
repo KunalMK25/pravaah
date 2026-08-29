@@ -125,6 +125,7 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
             client = Groq(
                 api_key=os.environ.get("GROQ_API_KEY"),
                 timeout=_LLM_TIMEOUT_S,
+                max_retries=0,
             )
             resp = client.chat.completions.create(
                 model=os.environ.get("PRAVAAH_GROQ_MODEL", "llama3-8b-8192"),
