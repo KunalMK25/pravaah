@@ -4,6 +4,7 @@ from .authoritative import AuthoritativeProvider
 from .derived import DerivedProvider
 from .osm import OSMProvider
 from .regional import RegionalProvider
+from .synthetic import SyntheticProvider
 from .worldpop import WorldPopProvider
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "WorldPopProvider",
     "OSMProvider",
     "DerivedProvider",
+    "SyntheticProvider",
 ]

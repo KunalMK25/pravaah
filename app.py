@@ -74,6 +74,11 @@ st.sidebar.subheader("Satellite Data (Optional)")
 sentinel1_geotiff_path = st.sidebar.text_input("🛰️ Sentinel-1 GeoTIFF (flood mask)", value="", placeholder="e.g., data/sentinel1_flood_mask.tif")
 sentinel1_geojson_path = st.sidebar.text_input("🛰️ Sentinel-1 GeoJSON (polygons)", value="", placeholder="e.g., data/sentinel1_flood.geojson")
 st.sidebar.caption("Leave empty to skip Sentinel-1 satellite data (optional)")
+st.sidebar.subheader("Population Data Providers (Phase 1B)")
+use_worldpop = st.sidebar.checkbox("🌍 WorldPop (gridded raster)", value=True)
+use_osm = st.sidebar.checkbox("🗺️ OpenStreetMap (habitation tags)", value=True)
+use_synthetic = st.sidebar.checkbox("🔄 Synthetic Fallback (if all fail)", value=True)
+st.sidebar.caption("Population estimates feed into habitation exposure analysis")
 st.sidebar.subheader("Intelligence Layers")
 run_sih = st.sidebar.checkbox("\U0001f3d8\ufe0f Habitation Analysis", value=True)
 run_phase3 = st.sidebar.checkbox("\U0001f5fa\ufe0f Spatial Zones + Candidates", value=True)
@@ -136,7 +141,12 @@ if run_button:
         bbox = offline_region.bbox if offline_region else BoundingBox(float(min_lon),float(min_lat),float(max_lon),float(max_lat))
         config = PipelineConfig(cell_size_meters=float(cell_size),model_type=selected_model_type,
             rf_n_estimators=50,cv_folds=3,low_threshold=float(low_threshold),medium_threshold=float(medium_threshold),
-            use_cache=False,allow_network=not use_offline)
+            use_cache=False,allow_network=not use_offline,
+            population_config={
+                "worldpop": {"enabled": use_worldpop},
+                "osm": {"enabled": use_osm},
+                "synthetic": {"enabled": use_synthetic},
+            })
         # Add optional Sentinel-1 paths to config (will be None if not provided)
         config.sentinel1_geotiff_path = sentinel1_geotiff_path if sentinel1_geotiff_path.strip() else None
         config.sentinel1_geojson_path = sentinel1_geojson_path if sentinel1_geojson_path.strip() else None
@@ -268,6 +278,50 @@ with tab_map:
         else:
             c1,c2,c3,c4=st.columns(4)
             c1.markdown("\U0001f534 High Risk"); c2.markdown("\U0001f7e1 Medium"); c3.markdown("\U0001f7e2 Low"); c4.markdown("\U0001f535 Water")
+        
+        # ── Sentinel-1 Satellite Validation Metrics ──
+        if result.sentinel1_comparison_metrics is not None:
+            s1_metrics = result.sentinel1_comparison_metrics
+            if s1_metrics.comparison_status == "COMPUTED":
+                st.markdown("---")
+                st.subheader("🛰️ Sentinel-1 Satellite Validation")
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1.metric("IoU (Intersection over Union)", f"{s1_metrics.iou:.3f}" if s1_metrics.iou is not None else "N/A")
+                mc2.metric("Precision", f"{s1_metrics.precision:.3f}" if s1_metrics.precision is not None else "N/A")
+                mc3.metric("Recall", f"{s1_metrics.recall:.3f}" if s1_metrics.recall is not None else "N/A")
+                mc4.metric("F1 Score", f"{s1_metrics.f1_score:.3f}" if s1_metrics.f1_score is not None else "N/A")
+                
+                # Confusion matrix details
+                with st.expander("📊 Validation Details"):
+                    vc1, vc2, vc3, vc4 = st.columns(4)
+                    vc1.metric("True Positives", s1_metrics.true_positives)
+                    vc2.metric("False Positives", s1_metrics.false_positives)
+                    vc3.metric("False Negatives", s1_metrics.false_negatives)
+                    vc4.metric("True Negatives", s1_metrics.true_negatives)
+                    
+                    st.markdown("**Coverage & Inundation:**")
+                    vv1, vv2, vv3 = st.columns(3)
+                    vv1.metric("Satellite Coverage", f"{s1_metrics.coverage_fraction*100:.1f}%")
+                    vv2.metric("Sentinel-1 Inundation", f"{s1_metrics.sentinel1_inundation_fraction*100:.1f}%")
+                    vv3.metric("Model Inundation", f"{s1_metrics.model_inundation_fraction*100:.1f}%")
+                    
+                    if s1_metrics.limitations:
+                        st.markdown("**Limitations:**")
+                        for lim in s1_metrics.limitations:
+                            st.caption(f"• {lim}")
+            elif s1_metrics.comparison_status == "UNAVAILABLE":
+                st.info(f"🛰️ Sentinel-1 data unavailable: {s1_metrics.error_reason or 'No satellite data provided'}")
+        elif result.sentinel1_observation is not None:
+            obs = result.sentinel1_observation
+            st.markdown("---")
+            st.subheader("🛰️ Sentinel-1 Satellite Observation")
+            s1c1, s1c2, s1c3 = st.columns(3)
+            s1c1.metric("Status", obs.observation_status)
+            s1c2.metric("Platform", obs.platform)
+            s1c3.metric("Confidence", f"{obs.confidence:.2f}")
+            if obs.observation_status == "OBSERVED":
+                st.info(f"Sentinel-1 observation acquired but metrics not computed (inundation: {obs.inundation_fraction*100:.1f}% if flood_observed={obs.flood_observed})")
+
     else:
         st.info("Configure parameters in the sidebar and click **Run Analysis**.")
 

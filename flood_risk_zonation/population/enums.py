@@ -7,6 +7,7 @@ class PopulationDataStatus(str, Enum):
 
     OBSERVED = "OBSERVED"           # Real data from authoritative/reliable source
     ESTIMATED = "ESTIMATED"         # Derived/synthetic estimate
+    SYNTHETIC = "SYNTHETIC"         # Synthetic fallback (lowest confidence)
     CACHED = "CACHED"               # Previously retrieved, now stale but valid
     UNAVAILABLE = "UNAVAILABLE"     # Data source configured but has no coverage
     UNKNOWN = "UNKNOWN"             # No data source available
@@ -20,7 +21,8 @@ class PopulationProviderType(str, Enum):
     WORLDPOP = "WORLDPOP"             # Tier 3: WorldPop gridded raster
     OSM = "OSM"                       # Tier 4: OpenStreetMap tags
     DERIVED = "DERIVED"               # Tier 5: Estimates (building count, etc.)
-    UNKNOWN = "UNKNOWN"               # Tier 6: No data available
+    SYNTHETIC = "SYNTHETIC"           # Tier 6: Synthetic/fallback estimates
+    UNKNOWN = "UNKNOWN"               # Tier 7: No data available
 
 
 class PopulationMethod(str, Enum):

@@ -241,9 +241,13 @@ class SIHPipeline:
         # ── Stage 2: Exposure analysis ─────────────────────────────────────────
         _cb("🔍 Analysing habitation exposure…")
         
+        # Create habitations dict for OSM provider (Phase 1B)
+        habitations_dict = {hab.hab_id: hab for hab in hab_dataset.habitations}
+        
         # Create population provider chain (Phase 1B)
         population_chain = create_population_provider_chain(
-            config.population_config if hasattr(config, 'population_config') else {}
+            config.population_config if hasattr(config, 'population_config') else {},
+            habitations_dict=habitations_dict
         )
         
         # Compute bounding box for population aggregation

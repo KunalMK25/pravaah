@@ -189,6 +189,8 @@ class FloodRiskResult:
     cell_count: int
     data_provenance: dict[str, str] = field(default_factory=dict)
     data_tier: int = 3
+    sentinel1_observation: Any = None  # Sentinel1ObservationResult if available
+    sentinel1_comparison_metrics: Any = None  # Sentinel1ComparisonMetrics if available
 
     @property
     def training_result(self) -> AnalysisResult:

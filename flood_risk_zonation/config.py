@@ -119,6 +119,12 @@ class PipelineConfig:
     random_seed: int = 42
     max_grid_cells: int = 100_000
     allow_network: bool = False
+    # Population provider configuration (Phase 1B)
+    population_config: dict = field(default_factory=lambda: {
+        "use_worldpop": True,
+        "use_osm": True,
+        "use_synthetic": True,
+    })
 
     def __post_init__(self) -> None:
         if self.cell_size_meters <= 0:

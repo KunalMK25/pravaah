@@ -11,6 +11,7 @@ from flood_risk_zonation.population.implementations import (
     DerivedProvider,
     OSMProvider,
     RegionalProvider,
+    SyntheticProvider,
     WorldPopProvider,
 )
 
@@ -34,6 +35,7 @@ def create_population_provider_chain(
         - "worldpop": dict (enable, search_radius_km, etc.)
         - "osm": dict (enable)
         - "derived": dict (enable)
+        - "synthetic": dict (enable)
     worldpop_raster : Optional[RasterDataset]
         WorldPop raster data (required if worldpop enabled)
     habitations_dict : Optional[dict]
@@ -50,6 +52,7 @@ def create_population_provider_chain(
     worldpop = None
     osm = None
     derived = None
+    synthetic = None
 
     # Tier 1: Authoritative
     if config.get("authoritative", {}).get("enabled", False):
@@ -92,6 +95,11 @@ def create_population_provider_chain(
         derived = DerivedProvider(config["derived"])
         logger.info("Population provider chain: derived provider enabled")
 
+    # Tier 6: Synthetic (fallback)
+    if config.get("synthetic", {}).get("enabled", False):
+        synthetic = SyntheticProvider(config["synthetic"])
+        logger.info("Population provider chain: synthetic provider enabled (fallback)")
+
     # Build chain
     chain = PopulationProviderChain(
         authoritative=authoritative,
@@ -99,6 +107,7 @@ def create_population_provider_chain(
         worldpop=worldpop,
         osm=osm,
         derived=derived,
+        synthetic=synthetic,
     )
 
     logger.info("Population provider chain created successfully")

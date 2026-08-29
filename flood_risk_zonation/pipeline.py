@@ -411,6 +411,24 @@ class FloodRiskPipeline:
             elevation_source=provenance.get("elevation", "synthetic"),
         )
 
+        # --- Compute Sentinel-1 comparison metrics (if available) ---
+        sentinel1_comparison_metrics = None
+        if sentinel1_observation is not None:
+            try:
+                from flood_risk_zonation.satellite.comparison import (
+                    compute_sentinel1_comparison_metrics,
+                )
+                sentinel1_comparison_metrics = compute_sentinel1_comparison_metrics(
+                    scored_grid, sentinel1_observation
+                )
+                logger.info(
+                    "Sentinel-1 comparison: status=%s, IoU=%.3f",
+                    sentinel1_comparison_metrics.comparison_status,
+                    sentinel1_comparison_metrics.iou or 0.0,
+                )
+            except Exception as exc:
+                logger.warning("Sentinel-1 comparison computation failed: %s", exc)
+
         duration = time.time() - t0
         self._data_tier = data_tier
         logger.info("Pipeline complete in %.1fs. Cells: %d", duration, len(scored_grid))
@@ -424,6 +442,8 @@ class FloodRiskPipeline:
             cell_count=len(scored_grid),
             data_provenance=provenance,
             data_tier=data_tier,
+            sentinel1_observation=sentinel1_observation,
+            sentinel1_comparison_metrics=sentinel1_comparison_metrics,
         )
 
 

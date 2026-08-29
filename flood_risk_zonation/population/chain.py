@@ -18,7 +18,7 @@ class PopulationProviderChain:
     """
     Deterministic multi-tier population provider chain.
 
-    Tries each provider in order: Authoritative → Regional → WorldPop → OSM → Derived → UNKNOWN.
+    Tries each provider in order: Authoritative → Regional → WorldPop → OSM → Derived → Synthetic → UNKNOWN.
     Uses first successful provider; records fallback reasons.
 
     Parameters
@@ -33,6 +33,8 @@ class PopulationProviderChain:
         Tier 4: OpenStreetMap tags
     derived : Optional[PopulationProvider]
         Tier 5: Derived estimates (building count, etc.)
+    synthetic : Optional[PopulationProvider]
+        Tier 6: Synthetic fallback estimates
     """
 
     def __init__(
@@ -42,6 +44,7 @@ class PopulationProviderChain:
         worldpop: Optional[PopulationProvider] = None,
         osm: Optional[PopulationProvider] = None,
         derived: Optional[PopulationProvider] = None,
+        synthetic: Optional[PopulationProvider] = None,
     ):
         """Initialize providers for each tier."""
         self.providers = [
@@ -50,6 +53,7 @@ class PopulationProviderChain:
             ("worldpop", worldpop),
             ("osm", osm),
             ("derived", derived),
+            ("synthetic", synthetic),
         ]
         # Always have UNKNOWN as fallback
         self.unknown_provider = UnknownProvider()
@@ -101,6 +105,13 @@ class PopulationProviderChain:
                 # If data found (OBSERVED or ESTIMATED), return it
                 if result.status in (PopulationDataStatus.OBSERVED, PopulationDataStatus.ESTIMATED):
                     logger.debug(f"Provider chain: {tier_name} succeeded for {hab_id}")
+                    if previous_fallback_reason:
+                        result.fallback_reason = previous_fallback_reason
+                    return result
+
+                # If SYNTHETIC (tier 6 fallback), return it as final fallback
+                if result.status == PopulationDataStatus.SYNTHETIC:
+                    logger.debug(f"Provider chain: {tier_name} returned SYNTHETIC (fallback) for {hab_id}")
                     if previous_fallback_reason:
                         result.fallback_reason = previous_fallback_reason
                     return result
