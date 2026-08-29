@@ -418,8 +418,20 @@ def assess_capacity(
     # 3. Roads (and build graph for routing)
     if road_points is None:
         road_points = _load_roads(infra_bbox, cache_path, allow_network)
-    if road_graph is None:
-        road_graph = build_road_graph(road_points) if road_points else None
+    
+    # Only build routing graph if:
+    #   - Not already provided AND
+    #   - Road points exist AND
+    #   - Dataset is small enough (guard against O(N²) complexity)
+    # This matches the guard logic in sih_pipeline.py to prevent
+    # rebuilding large graphs that were intentionally disabled.
+    MAX_ROUTING_NODES = 500
+    if road_graph is None and road_points:
+        if len(road_points) <= MAX_ROUTING_NODES:
+            road_graph = build_road_graph(road_points)
+        else:
+            # Large dataset: skip routing, use straight-line fallback
+            road_graph = None
 
     # 4. Calculate distances with routing
     nearest_hc_km, hc_method = _nearest_km(
