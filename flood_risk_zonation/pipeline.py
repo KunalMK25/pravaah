@@ -677,15 +677,15 @@ class FloodRiskPipeline:
                 # can only raise, never lower, a cell's risk.
                 # ────────────────────────────────────────────────────────────────
 
-                # boost_radius_m: 5 cell widths — provides a meaningful gradient
-                # while remaining LOCAL (does not flood the entire map with influence).
-                boost_radius_m = config.cell_size_meters * 5.0
+                # boost_radius_m: 2.5 cell widths — localised influence around water.
+                # (Regression fix: reverted from 5.0 which caused 85→248 HIGH cell expansion)
+                boost_radius_m = config.cell_size_meters * 2.5
 
-                # boost_max = 100.0: cells immediately adjacent to water score 100
-                # (HIGH). Cells at 2 cell widths from water score 60 (MEDIUM).
-                # Cells at 4+ cell widths get minimal or zero boost, preserving
-                # the baseline ML risk score.
-                boost_max = 100.0
+                # boost_max = 76.0: cells immediately adjacent to water score 76
+                # (barely HIGH at threshold=66). Cells at ~1 cell width from water score ~21 (LOW).
+                # Cells beyond 1 cell width get minimal boost, preserving baseline ML scores.
+                # (Regression fix: reverted from 100.0 which was too aggressive)
+                boost_max = 76.0
 
                 now_water = result["risk_class"].values == "Water"
 

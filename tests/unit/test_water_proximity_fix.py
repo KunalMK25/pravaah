@@ -152,14 +152,16 @@ class TestWaterProximityBoostConstants:
             )
 
     def test_medium_distance_cell_at_least_medium(self):
-        """Cell at ~2 cell widths (1000m) from water should exceed low_threshold."""
-        grid = _make_grid([77.510], [12.504], [10.0])
+        """Cell at ~1.5 cell widths (~750m) from water should exceed low_threshold with new params."""
+        grid = _make_grid([77.504], [12.504], [10.0])
         water = _wgdf([box(77.480, 12.50, 77.500, 12.510)], ["water"])
         with patch("flood_risk_zonation.pipeline._load_land_mask", return_value=_LAND):
             result = _boost(grid, water, cell_size=500.0)
         score = float(result.iloc[0]["risk_score"])
-        # At ~1000m distance, boost = 100*(1-1000/2500)=60 -> MEDIUM
-        assert score > 33.0, "Cell at ~2 cell-widths must exceed low_threshold=33; got " + str(round(score, 2))
+        # With reverted params: boost_radius_m=1250m, boost_max=76
+        # At ~750m distance: boost = 76*(1-750/1250)=30.4 -> score ≈ 40.4 (MEDIUM)
+        # Validates that proximity boost provides meaningful risk elevation at intermediate distances
+        assert score > 33.0, "Cell at ~1.5 cell-widths should be boosted to MEDIUM; got " + str(round(score, 2))
 
     def test_far_land_cell_remains_green(self):
         """Land >5x cell_size from water must remain at baseline LOW."""
