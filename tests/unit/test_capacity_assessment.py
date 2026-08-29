@@ -80,15 +80,19 @@ class TestHaversineKm:
 
 class TestNearestKm:
     def test_empty_points(self):
-        assert _nearest_km(12.9, 77.6, []) == -1.0
+        distance, method = _nearest_km(12.9, 77.6, [])
+        assert distance == -1.0
+        assert method == "unavailable"
 
     def test_single_point(self):
-        d = _nearest_km(12.9, 77.6, [(12.9, 77.6)])
-        assert d == pytest.approx(0.0, abs=0.001)
+        distance, method = _nearest_km(12.9, 77.6, [(12.9, 77.6)])
+        assert distance == pytest.approx(0.0, abs=0.001)
+        assert method == "straight_line_fallback"
 
     def test_picks_closest(self):
-        d = _nearest_km(0.0, 0.0, [(1.0, 0.0), (0.5, 0.0)])
-        assert d == pytest.approx(55.6, rel=0.05)
+        distance, method = _nearest_km(0.0, 0.0, [(1.0, 0.0), (0.5, 0.0)])
+        assert distance == pytest.approx(55.6, rel=0.05)
+        assert method == "straight_line_fallback"
 
 
 class TestComputeSafeArea:
