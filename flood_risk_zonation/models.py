@@ -459,6 +459,48 @@ class RelocationPriorityResult:
     population_source: str = "UNKNOWN"
     is_coastal: bool = False
     explanation: str = ""
+    time_horizon: str = "MEDIUM-TERM"  # "SHORT-TERM" | "MEDIUM-TERM" | "LONG-TERM"
+    time_horizon_explanation: str = ""
+
+
+@dataclass
+class AuthorityAlert:
+    """
+    Government authority alert derived from relocation priority and risk data.
+
+    Attributes
+    ----------
+    alert_id : str
+        Unique alert identifier (e.g., "PRAVAAH-2026-082701-001")
+    severity : str
+        "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+    affected_area : str
+        Settlement name or geographic description
+    affected_population : int
+        Estimated affected population
+    triggering_condition : str
+        Plain-language description of why alert was generated
+    evidence : dict
+        Supporting metrics (hazard_score, priority_class, etc.)
+    recommended_action : str
+        Authority-facing recommendation
+    relocation_horizon : str
+        "SHORT-TERM" | "MEDIUM-TERM" | "LONG-TERM"
+    authority_category : str
+        "LOCAL" | "REGIONAL" | "NATIONAL" | "SPECIALIZED"
+    generated_at : str
+        ISO timestamp
+    """
+    alert_id: str
+    severity: str
+    affected_area: str
+    affected_population: int
+    triggering_condition: str
+    evidence: dict = field(default_factory=dict)
+    recommended_action: str = ""
+    relocation_horizon: str = "MEDIUM-TERM"
+    authority_category: str = "LOCAL"
+    generated_at: str = ""
 
 
 @dataclass

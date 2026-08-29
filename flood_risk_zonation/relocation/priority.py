@@ -93,6 +93,46 @@ _ACTIONS = {
 }
 
 
+def _classify_time_horizon(
+    priority_class: str,
+    is_coastal: bool,
+    hazard_score: float,
+    pct_high_risk: float,
+) -> tuple[str, str]:
+    """
+    Classify relocation into time horizon based on priority and risk characteristics.
+
+    Returns
+    -------
+    tuple[str, str]
+        (time_horizon, explanation)
+    """
+    # SHORT-TERM (0–3 months): Immediate evacuation needed
+    if priority_class == "CRITICAL":
+        horizon = "SHORT-TERM"
+        reason = "CRITICAL relocation priority requires immediate action (0–3 months term)"
+        if is_coastal:
+            reason += "; coastal/tsunami inundation risk increases urgency"
+    # SHORT-TERM: Coastal + HIGH priority
+    elif is_coastal and priority_class == "HIGH":
+        horizon = "SHORT-TERM"
+        reason = "Coastal settlement with HIGH priority; short-term evacuation planning required (0–3 months)"
+    # MEDIUM-TERM (3–12 months): Planned intervention
+    elif priority_class == "HIGH" or (priority_class == "MEDIUM" and hazard_score > 75):
+        horizon = "MEDIUM-TERM"
+        reason = "HIGH priority habitation; structured intervention planned (3–12 months medium-term)"
+    # LONG-TERM (1–5 years): Gradual relocation
+    elif priority_class == "MEDIUM" or (priority_class == "LOW" and hazard_score > 50):
+        horizon = "LONG-TERM"
+        reason = "MEDIUM priority; long-term relocation planning (1–5 years)"
+    # DEFAULT: LOW priority
+    else:
+        horizon = "LONG-TERM"
+        reason = "LOW priority habitation; long-term routine monitoring with contingency planning"
+
+    return horizon, reason
+
+
 def _classify(score: float) -> str:
     for label, upper in _THRESHOLDS:
         if score < upper:
@@ -267,6 +307,14 @@ def score_relocation_priority(
         "Relocation: %s → score=%.3f priority=%s", exposure.hab_id, score, priority
     )
 
+    # ── Time horizon classification ───────────────────────────────────────────
+    time_horizon, time_horizon_explanation = _classify_time_horizon(
+        priority,
+        is_coastal,
+        exposure.hazard_score,
+        exposure.pct_high_risk,
+    )
+
     return RelocationPriorityResult(
         hab_id=exposure.hab_id,
         name=exposure.name,
@@ -283,4 +331,6 @@ def score_relocation_priority(
         population_source=exposure.population_source,
         is_coastal=is_coastal,
         explanation=explanation,
+        time_horizon=time_horizon,
+        time_horizon_explanation=time_horizon_explanation,
     )
