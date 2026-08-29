@@ -75,3 +75,34 @@ Desktop.ini
 
 # ── Kiro / agent workspace files ─────────────────────────────────────────────
 .kiro/
+
+# ── Development / diagnostic artifacts ────────────────────────────────────────
+# Audit reports generated during phase development
+PHASE_*_AUDIT_REPORT.md
+PHASE_*_FINAL_REPORT.md
+PHASE_*_STATUS_REPORT.md
+PHASE_*_VERIFICATION_COMPLETE.md
+PHASE_*_COMPLETION_AUDIT_REPORT.md
+PHASE_*_COMPLETION_MATRIX.md
+PHASE_*_IMPLEMENTATION_REPORT.md
+PHASE_*_DIAGNOSIS_REPORT.md
+PHASE_*_INVESTIGATION_REPORT.md
+PHASE_*_RESTORATION_PLAN.md
+PHASE_*_FIX_REPORT.md
+
+# Verification/test scripts generated during development
+VERIFY_*.py
+TEMP_*.py
+TEMP_*.txt
+
+# Temporary status files
+IMPLEMENTATION_COMPLETE.txt
+CI_FAILURE_ROOT_CAUSE_AUDIT.md
+COMPREHENSIVE_TIMING_DIAGNOSIS.md
+ROUTING_BUG_FIX_REPORT.md
+
+# Test result snapshots
+test_results.txt
+
+# Cleanup inventory
+CLEANUP_STEP*.md
