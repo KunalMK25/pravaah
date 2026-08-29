@@ -50,6 +50,11 @@ _MAX_LLM_RETRIES = 1
 _LLM_TIMEOUT_S   = 15   # seconds per call
 _MAX_TOKENS      = 300  # keep outputs concise
 
+# ── Circuit breaker for repeated LLM failures ─────────────────────────────────
+_llm_circuit_open = False
+_llm_consecutive_failures = 0
+_MAX_CONSECUTIVE_FAILURES = 3
+
 
 def _llm_available() -> bool:
     """Return True if a LLM provider is configured and the required key is present."""
@@ -68,7 +73,16 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
 
     Returns the response text, or None on any failure.
     The caller is responsible for fallback logic.
+    
+    Circuit breaker: After MAX_CONSECUTIVE_FAILURES, stops making API calls
+    and immediately returns None to avoid repeated slow failures.
     """
+    global _llm_circuit_open, _llm_consecutive_failures
+    
+    # Fast fail if circuit breaker is open
+    if _llm_circuit_open:
+        return None
+    
     if not _llm_available():
         return None
 
@@ -85,7 +99,11 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
                 max_tokens=_MAX_TOKENS,
                 temperature=0.1,   # near-deterministic for decision support
             )
-            return resp.choices[0].message.content.strip()
+            result = resp.choices[0].message.content.strip()
+            
+            # Success - reset failure counter
+            _llm_consecutive_failures = 0
+            return result
 
         if _PROVIDER == "anthropic":
             import anthropic
@@ -96,7 +114,11 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],
             )
-            return resp.content[0].text.strip()
+            result = resp.content[0].text.strip()
+            
+            # Success - reset failure counter
+            _llm_consecutive_failures = 0
+            return result
 
         if _PROVIDER == "groq":
             from groq import Groq
@@ -113,10 +135,25 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
                 max_tokens=_MAX_TOKENS,
                 temperature=0.1,
             )
-            return resp.choices[0].message.content.strip()
+            result = resp.choices[0].message.content.strip()
+            
+            # Success - reset failure counter
+            _llm_consecutive_failures = 0
+            return result
 
     except Exception as exc:
+        _llm_consecutive_failures += 1
+        
+        if _llm_consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+            _llm_circuit_open = True
+            logger.warning(
+                "LLM circuit breaker OPEN after %d consecutive failures. "
+                "Remaining agent calls will use rule-based fallback.",
+                _MAX_CONSECUTIVE_FAILURES
+            )
+        
         logger.warning("LLM call failed (%s): %s", _PROVIDER, exc)
+    
     return None
 
 
