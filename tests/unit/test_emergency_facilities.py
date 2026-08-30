@@ -126,7 +126,7 @@ class TestEvacuationRoute:
 
     def test_route_status_validation(self):
         """Test that only valid status values are accepted."""
-        # Valid status
+        # Valid status (failure state must have all-zero hazard exposure)
         route = EvacuationRoute(
             hab_id="hab_001",
             hab_name="Test",
@@ -136,7 +136,7 @@ class TestEvacuationRoute:
             route_geometry=[],
             distance_km=-1.0,
             routing_method="unavailable",
-            hazard_exposure={ZONE_RED: 0, ZONE_YELLOW: 0, ZONE_GREEN: 0, ZONE_WATER: 100},
+            hazard_exposure={ZONE_RED: 0.0, ZONE_YELLOW: 0.0, ZONE_GREEN: 0.0, ZONE_WATER: 0.0},
             status="NO_FACILITY_AVAILABLE",
         )
         assert route.status == "NO_FACILITY_AVAILABLE"
