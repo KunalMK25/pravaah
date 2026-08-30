@@ -124,9 +124,10 @@ def _compute_area_reference_ranges(scored_grid: gpd.GeoDataFrame) -> dict:
 
 class SIHPipeline:
     """
-    SIH26191 Decision Support Pipeline.
+    Habitation Intelligence Pipeline.
 
-    Wraps FloodRiskPipeline and adds habitation intelligence stages.
+    Wraps FloodRiskPipeline and adds habitation intelligence stages for spatial
+    zone classification, relocation prioritization, and agentic decision support.
 
     Parameters
     ----------
@@ -161,7 +162,7 @@ class SIHPipeline:
         progress_callback: ProgressCallback = None,
     ) -> SIHAnalysisResult:
         """
-        Run the full SIH pipeline (Phase 1 hazard + Phase 2 intelligence).
+        Run the full analysis pipeline (hazard assessment + habitation intelligence).
 
         Parameters
         ----------
@@ -191,11 +192,11 @@ class SIHPipeline:
         progress_callback: ProgressCallback = None,
     ) -> SIHAnalysisResult:
         """
-        Run only the SIH intelligence stages given an already-computed
+        Run habitation intelligence stages given an already-computed
         FloodRiskResult.
 
         This is the extension point for the Streamlit app — it can call the
-        existing pipeline, then call this method to layer SIH intelligence
+        existing pipeline, then call this method to layer habitation intelligence
         on top without repeating the expensive hazard computation.
 
         Parameters
@@ -231,7 +232,7 @@ class SIHPipeline:
         )
 
         if not hab_dataset.habitations:
-            logger.warning("No habitations found — SIH stages will produce empty results.")
+            logger.warning("No habitations found — analysis will produce empty results.")
             return SIHAnalysisResult(
                 flood_risk_result=hazard_result,
                 habitation_dataset=hab_dataset,
@@ -390,7 +391,7 @@ class SIHPipeline:
         adjacency: str = "8-neighbour",
     ) -> "FullSIHResult":
         """
-        Run Phase 3: spatial zone classification, relocation candidate
+        Run extended analysis: spatial zone classification, relocation candidate
         discovery, and (optionally) agentic decision-support analysis.
 
         This method is additive — it wraps SIHAnalysisResult in a FullSIHResult
@@ -487,7 +488,7 @@ class SIHPipeline:
 
         full_result.phase3_duration_seconds = time.time() - t0
         logger.info(
-            "Phase 3 complete in %.1fs — "
+            "Extended analysis complete in %.1fs — "
             "RED=%d  YELLOW=%d  GREEN=%d  "
             "candidates=%d habitations  agents=%d decisions",
             full_result.phase3_duration_seconds,
