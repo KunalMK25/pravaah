@@ -40,6 +40,7 @@ import os
 import time
 from typing import Any, Optional
 
+from flood_risk_zonation.agents.llm_rate_limiter import get_rate_limiter
 from flood_risk_zonation.models import AgentEvidence
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ _PROVIDER = os.environ.get("PRAVAAH_LLM_PROVIDER", "none").lower().strip()
 _MAX_LLM_RETRIES = 1
 _LLM_TIMEOUT_S   = 15   # seconds per call
 _MAX_TOKENS      = 300  # keep outputs concise
+_INTER_REQUEST_DELAY_MS = 100  # milliseconds between Groq calls for pacing
 
 # ── Circuit breaker for repeated LLM failures ─────────────────────────────────
 _llm_circuit_open = False
@@ -76,6 +78,10 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
     
     Circuit breaker: After MAX_CONSECUTIVE_FAILURES, stops making API calls
     and immediately returns None to avoid repeated slow failures.
+    
+    Rate limiting: Before making a request, checks if estimated tokens fit within
+    the remaining TPM (tokens per minute) budget. If not, skips the request.
+    Between requests, applies a small delay (100ms) to pace token consumption.
     """
     global _llm_circuit_open, _llm_consecutive_failures
     
@@ -85,6 +91,17 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
     
     if not _llm_available():
         return None
+
+    # Rate limiter: check if request fits within TPM budget
+    rate_limiter = get_rate_limiter()
+    if not rate_limiter.can_make_request(system_prompt, user_message):
+        logger.warning(
+            "LLM request skipped: TPM budget exhausted. Using rule-based fallback."
+        )
+        return None
+
+    # Request pacing: apply small delay before making request
+    time.sleep(_INTER_REQUEST_DELAY_MS / 1000.0)
 
     try:
         if _PROVIDER == "openai":
@@ -101,8 +118,10 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
             )
             result = resp.choices[0].message.content.strip()
             
-            # Success - reset failure counter
+            # Success - reset failure counter and record token usage
             _llm_consecutive_failures = 0
+            estimated_tokens = rate_limiter.estimate_request_tokens(system_prompt, user_message)
+            rate_limiter.record_request(estimated_tokens)
             return result
 
         if _PROVIDER == "anthropic":
@@ -116,8 +135,10 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
             )
             result = resp.content[0].text.strip()
             
-            # Success - reset failure counter
+            # Success - reset failure counter and record token usage
             _llm_consecutive_failures = 0
+            estimated_tokens = rate_limiter.estimate_request_tokens(system_prompt, user_message)
+            rate_limiter.record_request(estimated_tokens)
             return result
 
         if _PROVIDER == "groq":
@@ -138,8 +159,10 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
             )
             result = resp.choices[0].message.content.strip()
             
-            # Success - reset failure counter
+            # Success - reset failure counter and record token usage
             _llm_consecutive_failures = 0
+            estimated_tokens = rate_limiter.estimate_request_tokens(system_prompt, user_message)
+            rate_limiter.record_request(estimated_tokens)
             return result
 
     except Exception as exc:
@@ -160,6 +183,8 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
                 "incrementing failure counter for circuit breaker",
                 exc
             )
+            # Record 429 for rate limiter backoff calculation
+            rate_limiter.record_rate_limit_error()
         else:
             logger.warning("LLM call failed (%s): %s", _PROVIDER, exc)
         
