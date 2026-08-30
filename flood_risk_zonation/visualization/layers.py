@@ -469,3 +469,278 @@ def add_relocation_candidate_layer(
 
     fg.add_to(folium_map)
     return folium_map
+
+
+# ── Emergency Facilities & Evacuation Routes Layers ──────────────────────────
+
+def add_emergency_facilities_layer(
+    folium_map: folium.Map,
+    hospitals: list | None = None,
+    shelters: list | None = None,
+) -> folium.Map:
+    """
+    Add emergency facility markers (hospitals, shelters) to the map.
+
+    Hospitals are displayed with red cross icons in a "Hospitals" FeatureGroup.
+    Shelters are displayed with house icons in a "Shelters" FeatureGroup.
+    Both groups can be toggled independently via the layer control.
+
+    Parameters
+    ----------
+    folium_map : folium.Map
+        Map to which layers will be added.
+    hospitals : list[EmergencyFacility] | None
+        List of hospital facilities. If None, hospital layer is skipped.
+    shelters : list[EmergencyFacility] | None
+        List of shelter facilities. If None, shelter layer is skipped.
+
+    Returns
+    -------
+    folium.Map
+        Map with new facility layers added.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if hospitals:
+        fg_hospitals = folium.FeatureGroup(name="🏥 Hospitals", show=True)
+        for facility in hospitals:
+            try:
+                # Extract metadata for popup
+                osm_link = (
+                    f'<a href="https://www.openstreetmap.org/node/{facility.osm_id}" '
+                    f'target="_blank">View in OSM</a>'
+                    if facility.osm_id
+                    else ""
+                )
+                contact = facility.metadata.get("contact:phone", "Not available")
+                operator = facility.metadata.get("operator", "Unknown")
+
+                popup_html = f"""
+                <div style="font-family:sans-serif;font-size:12px;min-width:200px;max-width:280px">
+                  <h4 style="margin:0 0 6px 0;color:#c0392b">🏥 {facility.name}</h4>
+                  <table style="width:100%;border-collapse:collapse">
+                    <tr><td style="color:#666;padding:2px 4px">Type</td>
+                        <td style="padding:2px 4px">{facility.facility_type.title()}</td></tr>
+                    <tr style="background:#f8f8f8">
+                      <td style="color:#666;padding:2px 4px">Operator</td>
+                      <td style="padding:2px 4px">{operator}</td></tr>
+                    <tr><td style="color:#666;padding:2px 4px">Phone</td>
+                        <td style="padding:2px 4px">{contact}</td></tr>
+                    <tr style="background:#f8f8f8">
+                      <td style="color:#666;padding:2px 4px">Coordinates</td>
+                      <td style="padding:2px 4px">{facility.latitude:.4f}, {facility.longitude:.4f}</td></tr>
+                    <tr><td style="color:#666;padding:2px 4px">Source</td>
+                        <td style="padding:2px 4px">{facility.source}</td></tr>
+                  </table>
+                  <p style="margin:6px 0 0 0;font-size:10px;color:#555;border-top:1px solid #eee;padding-top:4px">
+                    {osm_link}
+                  </p>
+                </div>
+                """
+
+                tooltip_html = f"<b>{facility.name}</b><br>🏥 {facility.facility_type.title()}"
+
+                folium.Marker(
+                    location=[facility.latitude, facility.longitude],
+                    tooltip=folium.Tooltip(tooltip_html, sticky=True),
+                    popup=folium.Popup(popup_html, max_width=300),
+                    icon=folium.Icon(color="red", icon="plus", prefix="fa"),
+                ).add_to(fg_hospitals)
+            except Exception as e:
+                logger.warning("Failed to add hospital marker for %s: %s", facility.name, e)
+
+        fg_hospitals.add_to(folium_map)
+
+    if shelters:
+        fg_shelters = folium.FeatureGroup(name="🏠 Shelters", show=True)
+        for facility in shelters:
+            try:
+                osm_link = (
+                    f'<a href="https://www.openstreetmap.org/node/{facility.osm_id}" '
+                    f'target="_blank">View in OSM</a>'
+                    if facility.osm_id
+                    else ""
+                )
+                operator = facility.metadata.get("operator", "Unknown")
+                capacity = facility.metadata.get("capacity", "Unknown")
+
+                popup_html = f"""
+                <div style="font-family:sans-serif;font-size:12px;min-width:200px;max-width:280px">
+                  <h4 style="margin:0 0 6px 0;color:#27ae60">🏠 {facility.name}</h4>
+                  <table style="width:100%;border-collapse:collapse">
+                    <tr><td style="color:#666;padding:2px 4px">Type</td>
+                        <td style="padding:2px 4px">{facility.facility_type.title()}</td></tr>
+                    <tr style="background:#f8f8f8">
+                      <td style="color:#666;padding:2px 4px">Operator</td>
+                      <td style="padding:2px 4px">{operator}</td></tr>
+                    <tr><td style="color:#666;padding:2px 4px">Capacity</td>
+                        <td style="padding:2px 4px">{capacity}</td></tr>
+                    <tr style="background:#f8f8f8">
+                      <td style="color:#666;padding:2px 4px">Coordinates</td>
+                      <td style="padding:2px 4px">{facility.latitude:.4f}, {facility.longitude:.4f}</td></tr>
+                    <tr><td style="color:#666;padding:2px 4px">Source</td>
+                        <td style="padding:2px 4px">{facility.source}</td></tr>
+                  </table>
+                  <p style="margin:6px 0 0 0;font-size:10px;color:#555;border-top:1px solid #eee;padding-top:4px">
+                    {osm_link}
+                  </p>
+                </div>
+                """
+
+                tooltip_html = f"<b>{facility.name}</b><br>🏠 {facility.facility_type.title()}"
+
+                folium.Marker(
+                    location=[facility.latitude, facility.longitude],
+                    tooltip=folium.Tooltip(tooltip_html, sticky=True),
+                    popup=folium.Popup(popup_html, max_width=300),
+                    icon=folium.Icon(color="green", icon="home", prefix="fa"),
+                ).add_to(fg_shelters)
+            except Exception as e:
+                logger.warning("Failed to add shelter marker for %s: %s", facility.name, e)
+
+        fg_shelters.add_to(folium_map)
+
+    return folium_map
+
+
+def add_evacuation_routes_layer(
+    folium_map: folium.Map,
+    evacuation_routes: list | None = None,
+) -> folium.Map:
+    """
+    Add evacuation route polylines to the map.
+
+    Routes are colour-coded based on hazard exposure:
+      - GREEN (mostly safe): RED exposure <= 5%
+      - YELLOW (mixed):      RED exposure 5–20%
+      - ORANGE (hazardous):  RED exposure > 20%
+
+    Route popups show:
+      - Origin & destination habitation/facility names
+      - Distance (km) and routing method
+      - Hazard exposure breakdown (RED/YELLOW/GREEN/WATER %)
+      - Route status
+
+    Parameters
+    ----------
+    folium_map : folium.Map
+        Map to which routes will be added.
+    evacuation_routes : list[EvacuationRoute] | None
+        List of EvacuationRoute objects. If None, layer is skipped.
+
+    Returns
+    -------
+    folium.Map
+        Map with evacuation routes layer added.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not evacuation_routes:
+        return folium_map
+
+    fg = folium.FeatureGroup(name="🚨 Evacuation Routes", show=True)
+
+    for route in evacuation_routes:
+        if route.status != "FOUND":
+            # Skip unsuccessful routes (no geometry to display)
+            continue
+
+        if not route.route_geometry or len(route.route_geometry) < 2:
+            logger.debug("Route %s has insufficient geometry", route.hab_id)
+            continue
+
+        # Determine route colour based on RED zone exposure
+        red_exposure = route.hazard_exposure.get("RED", 0.0)
+        if red_exposure <= 5.0:
+            route_color = "#27ae60"  # green
+            route_weight = 3
+        elif red_exposure <= 20.0:
+            route_color = "#f39c12"  # orange
+            route_weight = 3
+        else:
+            route_color = "#e74c3c"  # red
+            route_weight = 3
+
+        # Build popup with route details
+        hazard_str = route.hazard_summary()
+        popup_html = f"""
+        <div style="font-family:sans-serif;font-size:11px;min-width:240px;max-width:320px">
+          <h4 style="margin:0 0 6px 0;color:#1a252f">
+            🚨 Evacuation Route
+          </h4>
+          <table style="width:100%;border-collapse:collapse">
+            <tr><td style="color:#666;padding:2px 4px;width:40%"><b>From</b></td>
+                <td style="padding:2px 4px"><i>{route.hab_name}</i></td></tr>
+            <tr style="background:#f8f8f8">
+              <td style="color:#666;padding:2px 4px"><b>To</b></td>
+              <td style="padding:2px 4px"><i>{route.facility_name}</i> ({route.facility_type.title()})</td></tr>
+            <tr><td style="color:#666;padding:2px 4px"><b>Distance</b></td>
+                <td style="padding:2px 4px"><b>{route.distance_km:.2f} km</b></td></tr>
+            <tr style="background:#f8f8f8">
+              <td style="color:#666;padding:2px 4px"><b>Method</b></td>
+              <td style="padding:2px 4px">{route.routing_method.replace("_", " ").title()}</td></tr>
+            <tr><td style="color:#666;padding:2px 4px;vertical-align:top"><b>Hazard</b></td>
+                <td style="padding:2px 4px"><code style="font-size:10px;color:#555">{hazard_str}</code></td></tr>
+            <tr style="background:#f8f8f8">
+              <td style="color:#666;padding:2px 4px"><b>Status</b></td>
+              <td style="padding:2px 4px">{route.status}</td></tr>
+          </table>
+          <p style="margin:6px 0 0 0;font-size:9px;color:#999;border-top:1px solid #eee;padding-top:4px">
+            ⚠ <b>Decision-support only</b> — not an official evacuation order. Authority decision-makers must verify facility capacity and issue official orders.
+          </p>
+        </div>
+        """
+
+        # Draw polyline for the route
+        try:
+            folium.PolyLine(
+                locations=route.route_geometry,
+                color=route_color,
+                weight=route_weight,
+                opacity=0.8,
+                popup=folium.Popup(popup_html, max_width=350),
+            ).add_to(fg)
+        except Exception as e:
+            logger.warning("Failed to draw route polyline for %s: %s", route.hab_id, e)
+            continue
+
+        # Add start marker (origin habitation)
+        try:
+            if route.route_geometry:
+                start_lat, start_lon = route.route_geometry[0]
+                tooltip_start = f"<b>Start:</b> {route.hab_name}"
+                folium.CircleMarker(
+                    location=[start_lat, start_lon],
+                    radius=5,
+                    color="#1a252f",
+                    fill=True,
+                    fill_color="#3498db",
+                    fill_opacity=0.8,
+                    weight=2,
+                    tooltip=folium.Tooltip(tooltip_start, sticky=True),
+                ).add_to(fg)
+        except Exception as e:
+            logger.debug("Failed to add start marker: %s", e)
+
+        # Add end marker (destination facility)
+        try:
+            if route.route_geometry:
+                end_lat, end_lon = route.route_geometry[-1]
+                tooltip_end = f"<b>Destination:</b> {route.facility_name}"
+                folium.CircleMarker(
+                    location=[end_lat, end_lon],
+                    radius=6,
+                    color="#1a252f",
+                    fill=True,
+                    fill_color="#2ecc71",
+                    fill_opacity=0.9,
+                    weight=2,
+                    tooltip=folium.Tooltip(tooltip_end, sticky=True),
+                ).add_to(fg)
+        except Exception as e:
+            logger.debug("Failed to add end marker: %s", e)
+
+    fg.add_to(folium_map)
+    return folium_map

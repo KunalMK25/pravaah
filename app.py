@@ -87,6 +87,19 @@ run_weather = st.sidebar.checkbox("\U0001f327\ufe0f Live Weather", value=True)
 run_forecast = st.sidebar.checkbox("\U0001f4c8 Forecast (24\u201372h)", value=True)
 run_validation = st.sidebar.checkbox("\U0001f4da Historical Validation", value=False)
 
+st.sidebar.subheader("🚨 Emergency Response")
+enable_emergency_facilities = st.sidebar.checkbox("Emergency Facilities", value=True)
+show_hospitals = show_shelters = False
+if enable_emergency_facilities:
+    show_hospitals = st.sidebar.checkbox("🏥 Hospitals", value=True)
+    show_shelters = st.sidebar.checkbox("🏠 Shelters", value=True)
+enable_evacuation_routes = st.sidebar.checkbox("Hazard-Aware Evacuation Routes", value=False)
+evacuation_priority_filter = []
+if enable_evacuation_routes:
+    evacuation_priority_filter = st.sidebar.multiselect(
+        "Route for priorities", ["CRITICAL", "HIGH", "MEDIUM"], default=["CRITICAL", "HIGH"]
+    )
+
 _llm_provider = os.environ.get("PRAVAAH_LLM_PROVIDER","none").lower()
 _has_llm = ((_llm_provider=="openai" and bool(os.environ.get("OPENAI_API_KEY"))) or
             (_llm_provider=="anthropic" and bool(os.environ.get("ANTHROPIC_API_KEY"))) or
@@ -264,9 +277,54 @@ with tab_map:
         rel_list=sih_result.relocation_results if sih_result else None
         zg=full_result.zoned_grid if full_result else None
         cands=full_result.relocation_candidates if full_result else None
+        
+        # Emergency Response: Load facilities and compute evacuation routes
+        emergency_facilities = {"hospitals": [], "shelters": []}
+        evacuation_routes_list = []
+        if enable_emergency_facilities or enable_evacuation_routes:
+            try:
+                from flood_risk_zonation.capacity.emergency_response import (
+                    load_emergency_facilities, compute_evacuation_routes
+                )
+                from flood_risk_zonation.utils.routing import build_road_graph
+                
+                # Create BBox from study area
+                study_bbox = BoundingBox(
+                    min_lon=float(min_lon), min_lat=float(min_lat),
+                    max_lon=float(max_lon), max_lat=float(max_lat)
+                )
+                
+                # Load facilities
+                if enable_emergency_facilities:
+                    emergency_facilities = load_emergency_facilities(
+                        bbox=study_bbox, cache_dir=".cache/osm", allow_network=True
+                    )
+                
+                # Compute evacuation routes
+                if enable_evacuation_routes and sih_result and evacuation_priority_filter:
+                    road_points = []
+                    try:
+                        road_graph = build_road_graph(road_points) if road_points else None
+                    except Exception:
+                        road_graph = None
+                    
+                    evacuation_routes_list = compute_evacuation_routes(
+                        sih_result=sih_result,
+                        zoned_grid=zg if zg is not None else None,
+                        facilities_dict=emergency_facilities,
+                        road_graph=road_graph,
+                        priority_filter=evacuation_priority_filter,
+                    )
+            except Exception as e:
+                st.warning(f"Emergency response feature error: {e}")
+        
         m=builder.build_choropleth_map(result.scored_grid,center=center,zoom_start=11,model_bounds=_mb,
             exposure_results=exp_list,relocation_results=rel_list,
-            show_red_zones=(zg is None),zoned_grid=zg,relocation_candidates=cands,show_spatial_zones=(zg is not None))
+            show_red_zones=(zg is None),zoned_grid=zg,relocation_candidates=cands,show_spatial_zones=(zg is not None),
+            show_emergency_facilities=enable_emergency_facilities,
+            hospitals=emergency_facilities.get("hospitals"),
+            shelters=emergency_facilities.get("shelters"),
+            evacuation_routes=evacuation_routes_list if enable_evacuation_routes else None)
         st.components.v1.html(m._repr_html_(),height=630,scrolling=False)
         if zg is not None:
             c1,c2,c3,c4=st.columns(4)

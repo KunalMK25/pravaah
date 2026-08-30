@@ -13,6 +13,11 @@ provenance so downstream consumers know which distance calculation was used.
 
 Routing is computed lazily and cached per origin to avoid repeated calculations.
 
+SHORTEST-PATH ALGORITHM:
+  - PRIMARY: A* search with Haversine heuristic (efficient for geographic graphs)
+  - FALLBACK: Dijkstra if A* fails (backward compatibility)
+  - HEURISTIC: Haversine (admissible lower bound on road distance)
+
 LIMITATIONS (documented):
   - Road network may be incomplete in OSM for remote areas
   - Healthcare facilities are matched to nearest road node; actual routing
@@ -60,6 +65,40 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlon = radians(lon2 - lon1)
     a = (dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * (dlon / 2) ** 2
     return R * 2 * sqrt(max(a, 0))
+
+
+def _a_star_heuristic(node_a: int, node_b: int, graph: nx.MultiGraph) -> float:
+    """
+    A* heuristic: Haversine distance between two graph nodes.
+
+    Used for goal-directed shortest-path search on geographic road graphs.
+    The heuristic is admissible (never overestimates) because straight-line
+    distance is always <= any path distance.
+
+    Parameters
+    ----------
+    node_a, node_b : int
+        Node IDs in the graph.
+    graph : nx.MultiGraph
+        Road network graph with (lat, lon) node attributes.
+
+    Returns
+    -------
+    float
+        Haversine distance in km, or 0 if coordinates are missing.
+    """
+    try:
+        lat_a = graph.nodes[node_a].get("lat")
+        lon_a = graph.nodes[node_a].get("lon")
+        lat_b = graph.nodes[node_b].get("lat")
+        lon_b = graph.nodes[node_b].get("lon")
+
+        if lat_a is None or lon_a is None or lat_b is None or lon_b is None:
+            return 0.0
+
+        return _haversine_km(lat_a, lon_a, lat_b, lon_b)
+    except (KeyError, TypeError):
+        return 0.0
 
 
 def build_road_graph(road_points: list[tuple[float, float]]) -> Optional[nx.MultiGraph]:
@@ -186,12 +225,21 @@ def shortest_network_distance(
                 if closest_target_node is None:
                     continue
 
-                # Compute shortest path on graph
+                # Compute shortest path on graph using A* with geographic heuristic
                 try:
                     if nx.has_path(graph, closest_hab_node, closest_target_node):
-                        path_length = nx.shortest_path_length(
-                            graph, closest_hab_node, closest_target_node, weight="weight"
-                        )
+                        # Try A* first (more efficient for geographic graphs)
+                        try:
+                            path_length = nx.astar_path_length(
+                                graph, closest_hab_node, closest_target_node,
+                                weight="weight",
+                                heuristic=lambda u, v: _a_star_heuristic(u, v, graph)
+                            )
+                        except (nx.NetworkXError, NotImplementedError):
+                            # Fall back to Dijkstra if A* fails (backward compatibility)
+                            path_length = nx.shortest_path_length(
+                                graph, closest_hab_node, closest_target_node, weight="weight"
+                            )
                         # Add distances from endpoints to graph
                         total_distance = min_dist_to_hab + path_length + min_dist_to_target
                         if total_distance < min_total_distance:

@@ -53,6 +53,11 @@ class FloodRiskMapBuilder:
         relocation_candidates: dict | None = None,
         show_spatial_zones: bool = True,
         zone_filter: list[str] | None = None,
+        # Emergency response — facilities + evacuation routes
+        show_emergency_facilities: bool = False,
+        hospitals: list | None = None,
+        shelters: list | None = None,
+        evacuation_routes: list | None = None,
     ) -> folium.Map:
         """
         Construct a Folium map with risk choropleth, drainage lines,
@@ -110,6 +115,16 @@ class FloodRiskMapBuilder:
         # Layer 8: Relocation candidate areas (Phase 3)
         if relocation_candidates and exposure_results:
             add_relocation_candidate_layer(m, relocation_candidates, exposure_results)
+
+        # Layer 9: Emergency facilities (hospitals, shelters)
+        if show_emergency_facilities:
+            from flood_risk_zonation.visualization.layers import add_emergency_facilities_layer
+            add_emergency_facilities_layer(m, hospitals=hospitals, shelters=shelters)
+
+        # Layer 10: Evacuation routes (hazard-aware)
+        if evacuation_routes:
+            from flood_risk_zonation.visualization.layers import add_evacuation_routes_layer
+            add_evacuation_routes_layer(m, evacuation_routes=evacuation_routes)
 
         # Per-cell hover tooltips + click popups
         self.add_cell_explainability_layer(m, scored_grid, model_bounds=model_bounds)

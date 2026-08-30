@@ -98,6 +98,18 @@ _HEALTHCARE_QUERY = (
     "out center;"
 )
 
+_SHELTER_QUERY = (
+    "[out:json][timeout:45];\n"
+    "(\n"
+    "  node[\"amenity\"=\"shelter\"]({s},{w},{n},{e});\n"
+    "  node[\"amenity\"=\"community_centre\"]({s},{w},{n},{e});\n"
+    "  node[\"amenity\"=\"social_centre\"]({s},{w},{n},{e});\n"
+    "  way[\"amenity\"=\"shelter\"]({s},{w},{n},{e});\n"
+    "  way[\"amenity\"=\"community_centre\"]({s},{w},{n},{e});\n"
+    ");\n"
+    "out center;"
+)
+
 _ROAD_QUERY = (
     "[out:json][timeout:45];\n"
     "(\n"
@@ -206,6 +218,49 @@ def _load_healthcare(
         pass
 
     logger.info("Fetched %d healthcare facilities.", len(points))
+    return [(p["lat"], p["lon"]) for p in points]
+
+
+def _load_shelters(
+    bbox: BoundingBox,
+    cache_dir: Path,
+    allow_network: bool,
+) -> list[tuple[float, float]]:
+    """Return list of (lat, lon) tuples for shelter facilities in bbox."""
+    bkey = f"{bbox.min_lon:.4f}_{bbox.min_lat:.4f}_{bbox.max_lon:.4f}_{bbox.max_lat:.4f}"
+    cache_path = cache_dir / f"shelters_{bkey}.json"
+
+    if cache_path.exists():
+        try:
+            data = json.loads(cache_path.read_text())
+            logger.debug("Shelters from cache: %d facilities.", len(data))
+            return [(d["lat"], d["lon"]) for d in data]
+        except Exception:
+            pass
+
+    if not allow_network:
+        return []
+
+    query = _SHELTER_QUERY.format(
+        s=bbox.min_lat, w=bbox.min_lon, n=bbox.max_lat, e=bbox.max_lon
+    )
+    raw = _fetch(query)
+    if raw is None:
+        return []
+
+    points: list[dict] = []
+    for el in raw.get("elements", []):
+        lat = el.get("lat") or (el.get("center") or {}).get("lat")
+        lon = el.get("lon") or (el.get("center") or {}).get("lon")
+        if lat and lon:
+            points.append({"lat": float(lat), "lon": float(lon)})
+
+    try:
+        cache_path.write_text(json.dumps(points), encoding="utf-8")
+    except Exception:
+        pass
+
+    logger.info("Fetched %d shelter facilities.", len(points))
     return [(p["lat"], p["lon"]) for p in points]
 
 
@@ -425,13 +480,8 @@ def assess_capacity(
     #   - Dataset is small enough (guard against O(N²) complexity)
     # This matches the guard logic in sih_pipeline.py to prevent
     # rebuilding large graphs that were intentionally disabled.
-    MAX_ROUTING_NODES = 500
     if road_graph is None and road_points:
-        if len(road_points) <= MAX_ROUTING_NODES:
-            road_graph = build_road_graph(road_points)
-        else:
-            # Large dataset: skip routing, use straight-line fallback
-            road_graph = None
+        road_graph = build_road_graph(road_points)
 
     # 4. Calculate distances with routing
     nearest_hc_km, hc_method = _nearest_km(
