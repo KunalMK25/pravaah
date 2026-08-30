@@ -131,13 +131,16 @@ class OverpassError(IOError):
 
 @retry(
     retry=retry_if_exception_type((OverpassError, requests.RequestException)),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(2),  # Reduced from 3 to 2
+    wait=wait_exponential(multiplier=1, min=1, max=10),  # Reduced wait
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
 def _fetch_with_retry(query: str) -> dict:
-    """POST query to each Overpass mirror; retry up to 3 times."""
+    """POST query to each Overpass mirror; retry up to 2 times.
+    
+    PERFORMANCE: Balanced timeout (15s) with 2 retries = max 30s per API call.
+    """
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": "SIH26191-HabitationIngest/2.0",
@@ -149,7 +152,7 @@ def _fetch_with_retry(query: str) -> dict:
                 mirror,
                 data=query.encode("utf-8"),
                 headers=headers,
-                timeout=30,
+                timeout=15,  # Increased from 8s to 15s for reliability
             )
             if r.status_code == 200:
                 return r.json()

@@ -142,62 +142,103 @@ class FloodRiskPipeline:
         logger.info("Ingesting data...")
         provenance: dict[str, str] = {}
 
-        # Elevation — search ALL tif files, not just Gottigere
-        if progress_callback:
-            progress_callback("⛰️ Fetching elevation…")
-        elev_dir = Path("data/elevation")
-        elevation = None
-        if elev_dir.exists():
-            from flood_risk_zonation.ingest.elevation import load_elevation
-            try:
-                elevation = load_elevation(bounding_box, elev_dir)
-                logger.info("Real elevation loaded from %s.", elevation.source)
-            except FloodRiskError as exc:
-                logger.warning("Real elevation unavailable (%s).", exc)
-        # Fallback 1: fetch from OpenTopoData SRTM API (gives real ocean=0 values)
-        if elevation is None and config.allow_network:
-            from flood_risk_zonation.ingest.elevation import fetch_elevation_api
-            logger.info("Fetching elevation from OpenTopoData SRTM API...")
-            elevation = fetch_elevation_api(bounding_box, resolution_m=500)
-            if elevation is not None:
-                logger.info("OpenTopoData elevation fetched successfully.")
-        # Fallback 2: synthetic (no ocean detection possible)
-        if elevation is None:
-            logger.warning("No SRTM file or API available, using synthetic elevation.")
-            elevation = generate_synthetic_elevation(bounding_box, resolution_m=500, seed=seed)
-        provenance["elevation"] = elevation.source
-
-        # Water bodies — fetch live from Overpass API for any bbox worldwide
-        # Results are cached locally so subsequent runs are instant
-        if progress_callback:
-            progress_callback("💧 Fetching water bodies…")
-        logger.info("Fetching water bodies from Overpass API...")
-        water_bodies = load_water_bodies(
-            bounding_box,
-            data_dir="data/water_bodies",
-            allow_network=config.allow_network,
-        )
-        logger.info("Water bodies loaded: %d features.", len(water_bodies))
-        provenance["water_bodies"] = water_bodies.attrs.get("source", "unavailable")
-
-        # Rainfall
-        if progress_callback:
-            progress_callback("🌧️ Fetching rainfall…")
-        rain_dir = Path("data/rainfall")
-        if list(rain_dir.glob("*.tif")):
-            from flood_risk_zonation.ingest.rainfall import load_rainfall
-            try:
-                rainfall = load_rainfall(bounding_box, rain_dir)
-                logger.info("Real rainfall loaded.")
-            except Exception as e:
-                logger.warning("Real rainfall failed (%s), using synthetic.", e)
-                rainfall = generate_synthetic_rainfall(bounding_box, resolution_m=1000, seed=seed)
-        else:
-            rainfall = generate_synthetic_rainfall(bounding_box, resolution_m=1000, seed=seed)
-        provenance["rainfall"] = rainfall.source
-
-        population = load_population(bounding_box, data_dir=str(config.cache_dir))
-        provenance["population"] = population.source
+        # PERFORMANCE OPTIMIZATION: Fetch independent data sources concurrently
+        # instead of sequentially to reduce total ingestion time.
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        def fetch_elevation():
+            """Fetch elevation data (real → API → synthetic fallback)."""
+            if progress_callback:
+                progress_callback("⛰️ Fetching elevation…")
+            elev_dir = Path("data/elevation")
+            elevation = None
+            if elev_dir.exists():
+                from flood_risk_zonation.ingest.elevation import load_elevation
+                try:
+                    elevation = load_elevation(bounding_box, elev_dir)
+                    logger.info("Real elevation loaded from %s.", elevation.source)
+                except FloodRiskError as exc:
+                    logger.warning("Real elevation unavailable (%s).", exc)
+            # Fallback 1: fetch from OpenTopoData SRTM API
+            if elevation is None and config.allow_network:
+                from flood_risk_zonation.ingest.elevation import fetch_elevation_api
+                logger.info("Fetching elevation from OpenTopoData SRTM API...")
+                elevation = fetch_elevation_api(bounding_box, resolution_m=500)
+                if elevation is not None:
+                    logger.info("OpenTopoData elevation fetched successfully.")
+            # Fallback 2: synthetic
+            if elevation is None:
+                logger.warning("No SRTM file or API available, using synthetic elevation.")
+                elevation = generate_synthetic_elevation(bounding_box, resolution_m=500, seed=seed)
+            return elevation
+        
+        def fetch_water_bodies():
+            """Fetch water bodies from Overpass API with caching."""
+            if progress_callback:
+                progress_callback("💧 Fetching water bodies…")
+            logger.info("Fetching water bodies from Overpass API...")
+            water_bodies = load_water_bodies(
+                bounding_box,
+                data_dir="data/water_bodies",
+                allow_network=config.allow_network,
+            )
+            logger.info("Water bodies loaded: %d features.", len(water_bodies))
+            return water_bodies
+        
+        def fetch_rainfall():
+            """Fetch rainfall data (real → synthetic fallback)."""
+            if progress_callback:
+                progress_callback("🌧️ Fetching rainfall…")
+            rain_dir = Path("data/rainfall")
+            if list(rain_dir.glob("*.tif")):
+                from flood_risk_zonation.ingest.rainfall import load_rainfall
+                try:
+                    rainfall = load_rainfall(bounding_box, rain_dir)
+                    logger.info("Real rainfall loaded.")
+                    return rainfall
+                except Exception as e:
+                    logger.warning("Real rainfall failed (%s), using synthetic.", e)
+            return generate_synthetic_rainfall(bounding_box, resolution_m=1000, seed=seed)
+        
+        def fetch_population():
+            """Fetch population data."""
+            return load_population(bounding_box, data_dir=str(config.cache_dir))
+        
+        # Execute data fetches concurrently (bounded to 4 threads)
+        elevation, water_bodies, rainfall, population = None, None, None, None
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(fetch_elevation): 'elevation',
+                executor.submit(fetch_water_bodies): 'water_bodies',
+                executor.submit(fetch_rainfall): 'rainfall',
+                executor.submit(fetch_population): 'population',
+            }
+            
+            for future in as_completed(futures):
+                data_type = futures[future]
+                try:
+                    result = future.result()
+                    if data_type == 'elevation':
+                        elevation = result
+                        provenance["elevation"] = elevation.source
+                    elif data_type == 'water_bodies':
+                        water_bodies = result
+                        provenance["water_bodies"] = water_bodies.attrs.get("source", "unavailable")
+                    elif data_type == 'rainfall':
+                        rainfall = result
+                        provenance["rainfall"] = rainfall.source
+                    elif data_type == 'population':
+                        population = result
+                        provenance["population"] = population.source
+                except Exception as exc:
+                    logger.error(f"Failed to fetch {data_type}: {exc}")
+                    # Provide synthetic fallback for critical data
+                    if data_type == 'elevation' and elevation is None:
+                        elevation = generate_synthetic_elevation(bounding_box, resolution_m=500, seed=seed)
+                        provenance["elevation"] = "synthetic"
+                    elif data_type == 'rainfall' and rainfall is None:
+                        rainfall = generate_synthetic_rainfall(bounding_box, resolution_m=1000, seed=seed)
+                        provenance["rainfall"] = "synthetic"
 
         # Add Sentinel-1 observation metadata to provenance
         if sentinel1_observation:
@@ -284,11 +325,15 @@ class FloodRiskPipeline:
         t0 = start_time if start_time is not None else time.time()
         config = self.config
         seed = config.random_seed
+        
+        # PERFORMANCE: Track stage timings for observability
+        stage_timings = {}
 
         validate_bounding_box(bounding_box)
         validate_config(config)
 
         # --- Grid generation (with optional cache) ---
+        t_grid_start = time.time()
         ck = cache_key(bounding_box, config)
         cache_path = get_cache_path(ck + "_grid", config.cache_dir)
 
@@ -304,7 +349,9 @@ class FloodRiskPipeline:
             )
             if config.use_cache:
                 save_geodataframe(grid, cache_path)
+        stage_timings['grid_generation'] = time.time() - t_grid_start
 
+        t_drainage_start = time.time()
         drainage = generate_drainage_proxy(
             grid,
             water_bodies,
@@ -313,13 +360,16 @@ class FloodRiskPipeline:
         )
         provenance = dict(provenance)  # avoid mutating the caller's dict
         provenance["drainage"] = drainage.source
+        stage_timings['drainage'] = time.time() - t_drainage_start
 
         if progress_callback:
             progress_callback("🔬 Computing features…")
+        t_features_start = time.time()
         logger.info("Extracting features for %d cells…", len(grid))
         featured_grid = extract_features(
             grid, elevation, rainfall, water_bodies, population, drainage
         )
+        stage_timings['feature_extraction'] = time.time() - t_features_start
 
         # --- Susceptibility model ---
         # WSI: transparent weighted index, no training needed.
@@ -327,6 +377,8 @@ class FloodRiskPipeline:
         # Ensemble (default): blends WSI + RF, reports full CV metrics.
         if progress_callback:
             progress_callback("🤖 Running susceptibility model…")
+        
+        t_model_start = time.time()
         X = featured_grid[FEATURE_COLUMNS].copy()
         model_type = getattr(config, "model_type", "ensemble")
 
@@ -394,10 +446,14 @@ class FloodRiskPipeline:
                     "Relative susceptibility index; not calibrated against observed flood events."
                 ),
             )
+        
+        stage_timings['model_training'] = time.time() - t_model_start
 
         # --- Risk scoring ---
         if progress_callback:
             progress_callback("🗺️ Scoring and rendering map…")
+        
+        t_scoring_start = time.time()
         logger.info("Scoring grid…")
         scorer = FloodRiskScorer()
         scorer.p_min = 0.0
@@ -406,10 +462,13 @@ class FloodRiskPipeline:
         scored_grid = scorer.score_grid(featured_grid, model, FEATURE_COLUMNS, thresholds)
 
         # --- Post-processing: water masking + proximity boosting ---
+        t_water_mask_start = time.time()
         scored_grid = self._apply_water_mask_and_proximity_boost(
             scored_grid, water_bodies, config,
             elevation_source=provenance.get("elevation", "synthetic"),
         )
+        stage_timings['scoring'] = time.time() - t_scoring_start
+        stage_timings['water_mask'] = time.time() - t_water_mask_start
 
         # --- Compute Sentinel-1 comparison metrics (if available) ---
         sentinel1_comparison_metrics = None
@@ -431,7 +490,11 @@ class FloodRiskPipeline:
 
         duration = time.time() - t0
         self._data_tier = data_tier
+        
+        # PERFORMANCE: Log stage timings for observability
         logger.info("Pipeline complete in %.1fs. Cells: %d", duration, len(scored_grid))
+        if stage_timings:
+            logger.info("Stage timings: " + ", ".join(f"{k}={v:.2f}s" for k, v in stage_timings.items()))
 
         return FloodRiskResult(
             scored_grid=scored_grid,
@@ -709,30 +772,73 @@ class FloodRiskPipeline:
 
                 now_water = result["risk_class"].values == "Water"
 
-                for i, pt in enumerate(centroid_pts_m):
-                    if now_water[i]:
-                        continue
-                    try:
-                        dist_to_water = pt.distance(boost_union_m)
-                        if dist_to_water >= boost_radius_m:
-                            continue   # beyond influence radius — no boost
-                        # Linear decay: 1.0 at dist=0, 0.0 at dist=boost_radius_m
-                        strength = max(0.0, 1.0 - dist_to_water / boost_radius_m)
-                        boosted_score = boost_max * strength
-                        idx = result.index[i]
-                        current_score = float(result.at[idx, "risk_score"])
-                        new_score = max(current_score, boosted_score)
-                        # Record the water-proximity boost for transparency/relocation
-                        result.at[idx, "water_proximity_score"] = round(boosted_score, 2)
-                        if new_score > current_score:
-                            result.at[idx, "risk_score"] = round(new_score, 2)
-                            if new_score > config.medium_threshold:
-                                result.at[idx, "risk_class"] = "High"
-                            elif new_score > config.low_threshold:
-                                result.at[idx, "risk_class"] = "Medium"
-                            # Note: new_score <= low_threshold means no class change
-                    except Exception:
-                        pass
+                # PERFORMANCE OPTIMIZATION: Vectorized distance calculation
+                # Instead of calling pt.distance() for each cell individually (O(N)),
+                # use GeoPandas vectorized distance operation (O(N) but much faster).
+                try:
+                    # Build GeoDataFrame of non-water centroids
+                    non_water_mask = ~now_water
+                    non_water_pts = centroid_pts_m[non_water_mask]
+                    
+                    if len(non_water_pts) > 0:
+                        # Vectorized distance calculation - much faster than per-cell loop
+                        distances = non_water_pts.distance(boost_union_m)
+                        
+                        # Filter to cells within boost radius
+                        within_radius = distances < boost_radius_m
+                        
+                        if within_radius.any():
+                            # Compute boost scores vectorized
+                            relevant_distances = distances[within_radius]
+                            strengths = np.maximum(0.0, 1.0 - relevant_distances / boost_radius_m)
+                            boosted_scores = boost_max * strengths
+                            
+                            # Map back to original indices
+                            original_indices = np.where(non_water_mask)[0]
+                            relevant_indices = original_indices[np.where(within_radius)[0]]
+                            
+                            # Apply boosts
+                            for idx, boosted_score in zip(relevant_indices, boosted_scores):
+                                result_idx = result.index[idx]
+                                current_score = float(result.at[result_idx, "risk_score"])
+                                new_score = max(current_score, boosted_score)
+                                
+                                # Record water-proximity boost for transparency
+                                result.at[result_idx, "water_proximity_score"] = round(boosted_score, 2)
+                                
+                                if new_score > current_score:
+                                    result.at[result_idx, "risk_score"] = round(new_score, 2)
+                                    if new_score > config.medium_threshold:
+                                        result.at[result_idx, "risk_class"] = "High"
+                                    elif new_score > config.low_threshold:
+                                        result.at[result_idx, "risk_class"] = "Medium"
+                except Exception as vec_exc:
+                    logger.warning("Vectorized proximity boost failed (%s), falling back to per-cell loop", vec_exc)
+                    # Fallback to original per-cell implementation
+                    for i, pt in enumerate(centroid_pts_m):
+                        if now_water[i]:
+                            continue
+                        try:
+                            dist_to_water = pt.distance(boost_union_m)
+                            if dist_to_water >= boost_radius_m:
+                                continue   # beyond influence radius — no boost
+                            # Linear decay: 1.0 at dist=0, 0.0 at dist=boost_radius_m
+                            strength = max(0.0, 1.0 - dist_to_water / boost_radius_m)
+                            boosted_score = boost_max * strength
+                            idx = result.index[i]
+                            current_score = float(result.at[idx, "risk_score"])
+                            new_score = max(current_score, boosted_score)
+                            # Record the water-proximity boost for transparency/relocation
+                            result.at[idx, "water_proximity_score"] = round(boosted_score, 2)
+                            if new_score > current_score:
+                                result.at[idx, "risk_score"] = round(new_score, 2)
+                                if new_score > config.medium_threshold:
+                                    result.at[idx, "risk_class"] = "High"
+                                elif new_score > config.low_threshold:
+                                    result.at[idx, "risk_class"] = "Medium"
+                                # Note: new_score <= low_threshold means no class change
+                        except Exception:
+                            pass
 
                 # Step 5: Coastal flag
                 if ocean_union_m is not None:

@@ -106,10 +106,10 @@ class PipelineConfig:
 
     cell_size_meters: float = 500.0
     model_type: Literal["random_forest", "lightgbm", "weighted_susceptibility", "ensemble"] = "ensemble"
-    rf_n_estimators: int = 200
+    rf_n_estimators: int = 100  # Reduced from 200 for faster training (still effective)
     rf_max_depth: Optional[int] = None
     rf_min_samples_leaf: int = 5
-    cv_folds: int = 5
+    cv_folds: int = 3  # Reduced from 5 for faster CV (still robust validation)
     low_threshold: float = 33.0
     medium_threshold: float = 66.0
     use_cache: bool = True

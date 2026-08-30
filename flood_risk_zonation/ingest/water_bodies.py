@@ -57,8 +57,8 @@ class OverpassError(IOError):
 
 @retry(
     retry=retry_if_exception_type((OverpassError, requests.RequestException)),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(2),  # Keep 2 retries
+    wait=wait_exponential(multiplier=1, min=1, max=10),
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
@@ -66,9 +66,8 @@ def _fetch_with_retry(query: str) -> dict:
     """
     POST *query* to each Overpass mirror in turn.
 
-    Retried up to 3 times (tenacity) with 2 s → 4 s → 8 s back-off.
-    Raises OverpassError / requests.RequestException on every attempt so
-    tenacity can intercept and retry.
+    Retried up to 2 times with 1s → 2s back-off.
+    PERFORMANCE: Increased timeout from 8s to 15s (balance between responsiveness and reliability).
     """
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -81,7 +80,7 @@ def _fetch_with_retry(query: str) -> dict:
                 mirror,
                 data=query.encode("utf-8"),
                 headers=headers,
-                timeout=25,
+                timeout=15,  # Increased from 8s to 15s for reliability
             )
             if r.status_code == 200:
                 return r.json()
