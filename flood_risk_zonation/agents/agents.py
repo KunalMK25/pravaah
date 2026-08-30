@@ -143,17 +143,42 @@ def _call_llm(system_prompt: str, user_message: str) -> str | None:
             return result
 
     except Exception as exc:
+        # Detect rate limit errors explicitly
+        exc_str = str(exc).lower()
+        exc_type = type(exc).__name__
+        
+        is_rate_limit = (
+            "429" in str(exc) or 
+            "rate limit" in exc_str or
+            "quota" in exc_str or
+            "RateLimitError" in exc_type
+        )
+        
+        if is_rate_limit:
+            logger.warning(
+                "LLM rate limit detected (HTTP 429 or similar): %s — "
+                "incrementing failure counter for circuit breaker",
+                exc
+            )
+        else:
+            logger.warning("LLM call failed (%s): %s", _PROVIDER, exc)
+        
         _llm_consecutive_failures += 1
         
         if _llm_consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
             _llm_circuit_open = True
-            logger.warning(
-                "LLM circuit breaker OPEN after %d consecutive failures. "
-                "Remaining agent calls will use rule-based fallback.",
-                _MAX_CONSECUTIVE_FAILURES
-            )
-        
-        logger.warning("LLM call failed (%s): %s", _PROVIDER, exc)
+            if is_rate_limit:
+                logger.warning(
+                    "LLM circuit breaker OPEN after %d consecutive failures "
+                    "(including rate limits). Remaining agent calls will use rule-based fallback.",
+                    _MAX_CONSECUTIVE_FAILURES
+                )
+            else:
+                logger.warning(
+                    "LLM circuit breaker OPEN after %d consecutive failures. "
+                    "Remaining agent calls will use rule-based fallback.",
+                    _MAX_CONSECUTIVE_FAILURES
+                )
     
     return None
 
