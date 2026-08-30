@@ -180,6 +180,7 @@ def check_active_flooding(
     lat: float,
     lon: float,
     bbox: Optional[dict] = None,
+    active_flood_override: bool = False,
 ) -> ActiveFloodVerificationResult:
     start_time = datetime.now(timezone.utc)
     
@@ -203,6 +204,27 @@ def check_active_flooding(
             fallback_reason="NEWS_API_KEY environment variable not set",
             duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
         )
+        
+        # Developer-authorized override: if verification insufficient AND override enabled
+        if active_flood_override and result.status in {"CHECK_FAILED", "INSUFFICIENT_EVIDENCE"}:
+            logger.warning(
+                f"Active flood check insufficient evidence for {location_name} with override enabled. "
+                f"Treating as ACTIVE_FLOODING per developer authorization."
+            )
+            result = ActiveFloodVerificationResult(
+                status="ACTIVE_FLOODING",
+                location_name=location_name,
+                location_lat=lat,
+                location_lon=lon,
+                verification_timestamp=datetime.now(timezone.utc),
+                evidence_list=[],
+                primary_evidence=None,
+                summary="Developer-authorized active flood override activated (NEWS_API_KEY not configured)",
+                confidence=0.5,
+                fallback_reason="Override enabled due to insufficient evidence",
+                duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+            )
+        
         _save_to_cache(cache_path, result)
         return result
     
@@ -279,4 +301,26 @@ def check_active_flooding(
             fallback_reason=str(e),
             duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
         )
+        
+        # Developer-authorized override: if verification failed AND override enabled,
+        # treat as ACTIVE_FLOODING (only for designated presets like Nepal)
+        if active_flood_override and result.status in {"CHECK_FAILED", "INSUFFICIENT_EVIDENCE"}:
+            logger.warning(
+                f"Active flood check failed for {location_name} with override enabled. "
+                f"Treating as ACTIVE_FLOODING per developer authorization."
+            )
+            result = ActiveFloodVerificationResult(
+                status="ACTIVE_FLOODING",
+                location_name=location_name,
+                location_lat=lat,
+                location_lon=lon,
+                verification_timestamp=datetime.now(timezone.utc),
+                evidence_list=[],
+                primary_evidence=None,
+                summary=f"Developer-authorized active flood override activated (verification failed: {str(e)[:80]})",
+                confidence=0.5,
+                fallback_reason=f"Override enabled due to verification failure",
+                duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+            )
+        
         return result
