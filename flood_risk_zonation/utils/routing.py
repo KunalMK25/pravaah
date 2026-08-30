@@ -109,6 +109,9 @@ def build_road_graph(road_points: list[tuple[float, float]]) -> Optional[nx.Mult
     Nodes are connected to form a spatial graph. No topological ordering is
     assumed; edges represent approximate network connectivity.
 
+    Uses spatial indexing (BallTree) for O(N log N) complexity instead of O(N²).
+    Scales to thousands of road points without arbitrary cutoffs.
+
     Parameters
     ----------
     road_points : list[tuple[float, float]]
@@ -123,28 +126,74 @@ def build_road_graph(road_points: list[tuple[float, float]]) -> Optional[nx.Mult
         return None
 
     try:
+        from sklearn.neighbors import BallTree
+        import numpy as np
+        
         G = nx.MultiGraph()
 
         # Add nodes with coordinates
         for i, (lat, lon) in enumerate(road_points):
             G.add_node(i, lat=lat, lon=lon)
 
-        # Connect nearby nodes (within ~2 km) to form edges
-        # This simulates road connectivity without explicit topology
-        for i, (lat1, lon1) in enumerate(road_points):
-            for j, (lat2, lon2) in enumerate(road_points):
-                if i < j:  # avoid duplicate edges
+        # Use BallTree for efficient spatial nearest-neighbor search
+        # Convert (lat, lon) to radians for haversine metric
+        points_rad = np.radians(np.array(road_points))
+        tree = BallTree(points_rad, metric='haversine')
+        
+        # Find all pairs within 2 km (~0.018 radians on Earth)
+        # 2 km ≈ 0.018 radians (Earth radius ≈ 6371 km)
+        RADIUS_KM = 2.0
+        EARTH_RADIUS_KM = 6371.0
+        radius_rad = RADIUS_KM / EARTH_RADIUS_KM
+        
+        indices = tree.query_radius(points_rad, r=radius_rad)
+        
+        # Add edges from query results
+        for i, neighbors in enumerate(indices):
+            for j in neighbors:
+                if i < j:  # Avoid duplicate edges
+                    lat1, lon1 = road_points[i]
+                    lat2, lon2 = road_points[j]
                     dist_km = _haversine_km(lat1, lon1, lat2, lon2)
-                    if dist_km <= 2.0 and dist_km > 0:
+                    if dist_km > 0:  # Ensure non-zero distance
                         G.add_edge(i, j, weight=dist_km)
 
         if len(G.edges()) == 0:
             logger.warning("Road graph has no edges; fallback to haversine")
             return None
 
-        logger.debug("Built road graph: %d nodes, %d edges", len(G.nodes()), len(G.edges()))
+        logger.debug(
+            "Built road graph: %d nodes, %d edges (optimized BallTree)",
+            len(G.nodes()),
+            len(G.edges())
+        )
         return G
 
+    except ImportError:
+        # Fallback to O(N²) implementation if sklearn not available
+        logger.warning("sklearn not available; using O(N²) graph construction")
+        try:
+            G = nx.MultiGraph()
+            for i, (lat, lon) in enumerate(road_points):
+                G.add_node(i, lat=lat, lon=lon)
+            
+            for i, (lat1, lon1) in enumerate(road_points):
+                for j, (lat2, lon2) in enumerate(road_points):
+                    if i < j:
+                        dist_km = _haversine_km(lat1, lon1, lat2, lon2)
+                        if dist_km <= 2.0 and dist_km > 0:
+                            G.add_edge(i, j, weight=dist_km)
+            
+            if len(G.edges()) == 0:
+                logger.warning("Road graph has no edges; fallback to haversine")
+                return None
+            
+            logger.debug("Built road graph: %d nodes, %d edges", len(G.nodes()), len(G.edges()))
+            return G
+        except Exception as e:
+            logger.warning("Failed to build road graph: %s", e)
+            return None
+    
     except Exception as e:
         logger.warning("Failed to build road graph: %s", e)
         return None

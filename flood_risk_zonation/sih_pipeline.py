@@ -289,18 +289,8 @@ class SIHPipeline:
         hc_points = _load_healthcare(infra_bbox, cache_path, self._allow_network)
         road_points = _load_roads(infra_bbox, cache_path, self._allow_network)
         
-        # Guard against large routing graphs that cause O(N²) complexity
-        # For graphs >500 nodes, skip routing and use straight-line fallback
-        MAX_ROUTING_NODES = 500
-        if road_points and len(road_points) > MAX_ROUTING_NODES:
-            logger.warning(
-                "Routing graph skipped: %d road points exceeds maximum routing "
-                "graph size of %d; using straight-line fallback.",
-                len(road_points), MAX_ROUTING_NODES
-            )
-            road_graph = None
-        else:
-            road_graph = build_road_graph(road_points) if road_points else None
+        # Build routing graph from road points (scales efficiently with BallTree optimization)
+        road_graph = build_road_graph(road_points) if road_points else None
 
         capacity_results: list[CarryingCapacityResult] = []
         for exp in exposure_results:
