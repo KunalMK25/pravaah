@@ -488,9 +488,8 @@ class TestPerformanceOptimisations:
     def test_pipeline_config_rf_estimators_unchanged(self):
         """Habitation improvements must not mutate PipelineConfig defaults."""
         config = PipelineConfig()
-        # Current codebase default is 50 (optimized from 100 for 2.62x speedup with negligible accuracy trade-off).
-        # Assert the value remains at the optimized setting.
-        assert config.rf_n_estimators == 50, (
+        # Production default: 100 estimators, 3-fold CV (optimal speed-accuracy balance)
+        assert config.rf_n_estimators == 100, (
             f"rf_n_estimators default unexpectedly changed: got {config.rf_n_estimators}"
         )
 

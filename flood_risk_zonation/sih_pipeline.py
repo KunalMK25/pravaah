@@ -290,8 +290,27 @@ class SIHPipeline:
         hc_points = _load_healthcare(infra_bbox, cache_path, self._allow_network)
         road_points = _load_roads(infra_bbox, cache_path, self._allow_network)
         
-        # Build routing graph from road points (scales efficiently with BallTree optimization)
-        road_graph = build_road_graph(road_points) if road_points else None
+        # Build routing graph with 500-node performance guard:
+        # Network routing uses BallTree (O(N log N)), but fallback is O(N²).
+        # For >500 nodes, use geodesic/straight-line distances instead to prevent slowdown.
+        ROAD_GRAPH_NODE_THRESHOLD = 500
+        road_graph = None
+        if road_points:
+            if len(road_points) <= ROAD_GRAPH_NODE_THRESHOLD:
+                road_graph = build_road_graph(road_points)
+                logger.info(
+                    "Built routing graph from %d road points for network-based distance routing",
+                    len(road_points)
+                )
+            else:
+                logger.warning(
+                    "Road network has %d nodes (exceeds %d-node threshold); "
+                    "using straight-line/geodesic distance fallback for capacity assessment "
+                    "to prevent performance bottleneck",
+                    len(road_points),
+                    ROAD_GRAPH_NODE_THRESHOLD
+                )
+                # road_graph remains None, triggering automatic fallback to haversine in assess_capacity()
 
         capacity_results: list[CarryingCapacityResult] = []
         for exp in exposure_results:
