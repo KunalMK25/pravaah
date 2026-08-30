@@ -169,6 +169,32 @@ if run_button:
         pipeline = FloodRiskPipeline(config)
         with st.status("Running PRAVAAH-AI analysis…", expanded=True) as status:
             p = st.write
+            
+            # Active Flood Verification Gate (MUST execute BEFORE pipeline)
+            active_flood_result = None
+            if not use_offline:
+                p("Checking for active flooding...")
+                try:
+                    from flood_risk_zonation.verification.active_flood_check import check_active_flooding
+                    area_name = area_name_input if area_name_input.strip() else f"Lat {bbox.min_lat:.2f} to {bbox.max_lat:.2f}"
+                    active_flood_result = check_active_flooding(
+                        location_name=area_name,
+                        lat=(bbox.min_lat + bbox.max_lat) / 2.0,
+                        lon=(bbox.min_lon + bbox.max_lon) / 2.0,
+                    )
+                    if active_flood_result.is_active_flood_gate():
+                        p(f"🚨 **ACTIVE FLOODING DETECTED**: {active_flood_result.summary}")
+                        st.session_state.active_flood_result = active_flood_result
+                        status.update(label="Active flooding detected - pipeline skipped", state="complete")
+                        # Stop execution to prevent expensive pipeline
+                        st.stop()
+                    else:
+                        p(f"✓ No active flooding - proceeding with analysis")
+                except Exception as afe:
+                    p(f"⚠️ Verification error: {afe}")
+                    p("Proceeding with normal analysis (safety fallback)")
+                    active_flood_result = None
+            
             if use_offline and offline_region:
                 p("📦 Loading offline data…")
                 from flood_risk_zonation.ingest.sample_data import get_demo_elevation,get_demo_rainfall,get_demo_water_bodies
@@ -241,6 +267,35 @@ if run_button:
         st.session_state.update({"result":result,"sih_result":sih_result,"full_result":full_result,
                                  "weather_data":weather_data,"forecast_result":forecast_result,
                                  "validation_result":validation_result})
+        # Active Flood Emergency Banner
+        if st.session_state.get('active_flood_result'):
+            afr = st.session_state.active_flood_result
+            if afr.is_active_flood_gate():
+                st.markdown(
+                    f'<div style="background-color:#c0392b; padding:20px; border-radius:8px; '
+                    f'border:3px solid #a93226; color:white; text-align:center; '
+                    f'box-shadow: 0 0 20px rgba(192,57,43,0.8)">'
+                    f'<h2 style="margin:0; color:white; font-weight:bold;">?? ACTIVE FLOODING DETECTED ??</h2>'
+                    f'<p style="margin:10px 0 0 0; font-size:16px;">{afr.summary}</p>'
+                    f'<p style="margin:8px 0 0 0; font-size:13px; opacity:0.9;">'
+                    f'<strong>Location:</strong> {afr.location_name}<br/>'
+                    f'<strong>Verified:</strong> {afr.verification_timestamp.strftime("%Y-%m-%d %H:%M UTC")}<br/>'
+                    f'<strong>Confidence:</strong> {afr.confidence:.0%}'
+                    f'</p>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+                st.markdown('---')
+                if afr.primary_evidence:
+                    with st.expander('?? Evidence Details', expanded=False):
+                        st.write(f'**Source:** {afr.primary_evidence.source}')
+                        st.write(f'**Title:** {afr.primary_evidence.title}')
+                        st.write(f'**Evidence:** {afr.primary_evidence.evidence_text}')
+                        if afr.primary_evidence.timestamp:
+                            st.write(f'**Published:** {afr.primary_evidence.timestamp.strftime("%Y-%m-%d %H:%M UTC")}')
+                st.warning('?? The predictive analysis below is for reference only. Current flooding is an active situation that requires immediate official emergency response.', icon='??')
+                st.markdown('---')
+        
         # Summary alert
         if sih_result:
             nc=len(sih_result.critical_habitations); nh=sum(1 for r in sih_result.relocation_results if r.priority_class=="HIGH")
