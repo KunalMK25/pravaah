@@ -366,9 +366,21 @@ class FloodRiskPipeline:
             progress_callback("🔬 Computing features…")
         t_features_start = time.time()
         logger.info("Extracting features for %d cells…", len(grid))
-        featured_grid = extract_features(
-            grid, elevation, rainfall, water_bodies, population, drainage
-        )
+        
+        # OPTIMIZATION: Cache featured_grid to avoid redundant feature extraction
+        ck_features = cache_key(bounding_box, config) + "_features"
+        cache_path_features = get_cache_path(ck_features, config.cache_dir)
+        
+        if config.use_cache and is_cached(ck_features, config.cache_dir):
+            logger.info("Loading featured grid from cache…")
+            featured_grid = load_geodataframe(cache_path_features)
+        else:
+            featured_grid = extract_features(
+                grid, elevation, rainfall, water_bodies, population, drainage
+            )
+            if config.use_cache:
+                save_geodataframe(featured_grid, cache_path_features)
+        
         stage_timings['feature_extraction'] = time.time() - t_features_start
 
         # --- Susceptibility model ---
@@ -411,6 +423,7 @@ class FloodRiskPipeline:
                 cv_accuracy_scores=model.cv_accuracy_scores,
                 cv_precision_scores=model.cv_precision_scores,
                 cv_recall_scores=model.cv_recall_scores,
+                scorer=None,  # Will be set after scoring completes
             )
         elif model_type == "random_forest":
             logger.info("Training Random Forest susceptibility model…")
@@ -433,6 +446,7 @@ class FloodRiskPipeline:
                 mean_cv_f1=model.mean_cv_f1,
                 cv_auc_scores=model.cv_auc_scores,
                 cv_f1_scores=model.cv_f1_scores,
+                scorer=None,  # Will be set after scoring completes
             )
         else:
             # Weighted Susceptibility Index (fully transparent, no training)
@@ -445,6 +459,7 @@ class FloodRiskPipeline:
                 validation_note=(
                     "Relative susceptibility index; not calibrated against observed flood events."
                 ),
+                scorer=None,  # Will be set after scoring completes
             )
         
         stage_timings['model_training'] = time.time() - t_model_start
@@ -490,6 +505,10 @@ class FloodRiskPipeline:
 
         duration = time.time() - t0
         self._data_tier = data_tier
+        
+        # Store the scorer in analysis_result for scenario analysis (CRITICAL FIX)
+        # This ensures scenarios use the baseline's probability calibration
+        analysis_result.scorer = scorer
         
         # PERFORMANCE: Log stage timings for observability
         logger.info("Pipeline complete in %.1fs. Cells: %d", duration, len(scored_grid))

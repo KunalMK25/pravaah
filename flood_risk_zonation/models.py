@@ -125,6 +125,7 @@ class AnalysisResult:
     cv_accuracy_scores: Optional[list] = None
     cv_precision_scores: Optional[list] = None
     cv_recall_scores: Optional[list] = None
+    scorer: Any = None  # FloodRiskScorer instance for probability calibration; used by scenarios
 
 
 @dataclass

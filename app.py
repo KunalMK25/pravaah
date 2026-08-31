@@ -35,14 +35,13 @@ st.sidebar.caption("Predictive Risk & Vulnerability Assessment for At-Risk Habit
 st.sidebar.markdown("---")
 
 PRESET_REGIONS = {
-    "Gottigere, Bangalore": {"min_lon":77.55,"min_lat":12.84,"max_lon":77.62,"max_lat":12.91,"area_name":"Gottigere, Bangalore","offline_key":"Bangalore (Gottigere)","active_flood_override":False},
-    "Chennai Marina (Coastal)": {"min_lon":80.24,"min_lat":12.98,"max_lon":80.31,"max_lat":13.05,"area_name":"Chennai Marina, Chennai","offline_key":"Chennai Marina (Coastal)","active_flood_override":False},
-    "Dal Lake, Srinagar": {"min_lon":74.83,"min_lat":34.07,"max_lon":74.90,"max_lat":34.14,"area_name":"Dal Lake, Srinagar","offline_key":"Dal Lake, Srinagar","active_flood_override":False},
-    "Puri, Odisha (Cyclone Coast)": {"min_lon":85.80,"min_lat":19.77,"max_lon":85.87,"max_lat":19.84,"area_name":"Puri, Odisha","offline_key":None,"active_flood_override":False},
-    "Indian Hilly Region (Sikkim)": {"min_lon":87.50,"min_lat":27.40,"max_lon":88.57,"max_lat":28.47,"area_name":"Sikkim Foothills (Himalayan Region)","offline_key":"Indian Hilly Region","active_flood_override":False},
-    "Nepal Recent Flood-Affected Area": {"min_lon":85.40,"min_lat":28.10,"max_lon":86.47,"max_lat":29.17,"area_name":"Rasuwa District, Bhote Koshi River (Nepal)","offline_key":"Nepal Flood Area","active_flood_override":True},
-    "Indian Ocean Open Water": {"min_lon":71.50,"min_lat":9.50,"max_lon":72.57,"max_lat":10.57,"area_name":"Arabian Sea Open Water (Demonstration)","offline_key":"Indian Ocean","active_flood_override":False},
-    "\u270f\ufe0f Custom Region": {"min_lon":77.55,"min_lat":12.84,"max_lon":77.62,"max_lat":12.91,"area_name":"","offline_key":None,"active_flood_override":False},
+    "Gottigere, Bangalore": {"min_lon":77.55,"min_lat":12.84,"max_lon":77.62,"max_lat":12.91,"area_name":"Gottigere, Bangalore","offline_key":"Bangalore (Gottigere)"},
+    "Chennai Marina (Coastal)": {"min_lon":80.24,"min_lat":12.98,"max_lon":80.31,"max_lat":13.05,"area_name":"Chennai Marina, Chennai","offline_key":"Chennai Marina (Coastal)"},
+    "Dal Lake, Srinagar": {"min_lon":74.83,"min_lat":34.07,"max_lon":74.90,"max_lat":34.14,"area_name":"Dal Lake, Srinagar","offline_key":"Dal Lake, Srinagar"},
+    "Puri, Odisha (Cyclone Coast)": {"min_lon":85.80,"min_lat":19.77,"max_lon":85.87,"max_lat":19.84,"area_name":"Puri, Odisha","offline_key":None},
+    "Indian Hilly Region": {"min_lon":88.45,"min_lat":27.45,"max_lon":88.55,"max_lat":27.55,"area_name":"Indian Hilly Region (Sikkim-Darjeeling)","offline_key":"Indian Hilly Region"},
+    "Indian Ocean Open Water": {"min_lon":71.95,"min_lat":9.95,"max_lon":72.05,"max_lat":10.05,"area_name":"Arabian Sea Open Water","offline_key":"Indian Ocean"},
+    "\u270f\ufe0f Custom Region": {"min_lon":77.55,"min_lat":12.84,"max_lon":77.62,"max_lat":12.91,"area_name":"","offline_key":None},
 }
 st.sidebar.subheader("Region Selection")
 selected_preset = st.sidebar.selectbox("Select Region", list(PRESET_REGIONS.keys()), index=0)
@@ -156,7 +155,7 @@ if run_button:
     try:
         bbox = offline_region.bbox if offline_region else BoundingBox(float(min_lon),float(min_lat),float(max_lon),float(max_lat))
         config = PipelineConfig(cell_size_meters=float(cell_size),model_type=selected_model_type,
-            rf_n_estimators=50,cv_folds=3,low_threshold=float(low_threshold),medium_threshold=float(medium_threshold),
+            rf_n_estimators=100,cv_folds=3,low_threshold=float(low_threshold),medium_threshold=float(medium_threshold),
             use_cache=False,allow_network=not use_offline,
             population_config={
                 "worldpop": {"enabled": use_worldpop},
@@ -172,34 +171,6 @@ if run_button:
         pipeline = FloodRiskPipeline(config)
         with st.status("Running PRAVAAH-AI analysis…", expanded=True) as status:
             p = st.write
-            
-            # Active Flood Verification Gate (MUST execute BEFORE pipeline)
-            active_flood_result = None
-            if not use_offline:
-                p("Checking for active flooding...")
-                try:
-                    from flood_risk_zonation.verification.active_flood_check import check_active_flooding
-                    area_name = area_name_input if area_name_input.strip() else f"Lat {bbox.min_lat:.2f} to {bbox.max_lat:.2f}"
-                    # Get active_flood_override from preset if available
-                    override_enabled = preset.get("active_flood_override", False)
-                    active_flood_result = check_active_flooding(
-                        location_name=area_name,
-                        lat=(bbox.min_lat + bbox.max_lat) / 2.0,
-                        lon=(bbox.min_lon + bbox.max_lon) / 2.0,
-                        active_flood_override=override_enabled,
-                    )
-                    if active_flood_result.is_active_flood_gate():
-                        p(f"🚨 **ACTIVE FLOODING DETECTED**: {active_flood_result.summary}")
-                        st.session_state.active_flood_result = active_flood_result
-                        status.update(label="Active flooding detected - pipeline skipped", state="complete")
-                        # Stop execution to prevent expensive pipeline
-                        st.stop()
-                    else:
-                        p(f"✓ No active flooding - proceeding with analysis")
-                except Exception as afe:
-                    p(f"⚠️ Verification error: {afe}")
-                    p("Proceeding with normal analysis (safety fallback)")
-                    active_flood_result = None
             
             if use_offline and offline_region:
                 p("📦 Loading offline data…")

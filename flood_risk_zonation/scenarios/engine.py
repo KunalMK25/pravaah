@@ -115,11 +115,42 @@ def run_scenario(
         available_feats = [c for c in FEATURE_COLUMNS if c in modified.columns]
         X_mod = modified[available_feats].copy()
 
+        # CRITICAL FIX: Preserve the baseline's probability calibration (p_min/p_max)
+        # so that scenario risk scores are directly comparable to baseline scores.
+        # Without this, the scenario recalibrates from its own probability distribution,
+        # causing different normalization bounds and shifting cells across thresholds
+        # even when rainfall increases (counterintuitive behavior).
         scorer = FloodRiskScorer()
-        scorer.p_min = 0.0
-        scorer.p_max = 1.0
+        
+        # Extract baseline probability bounds if available from the hazard_result
+        if hasattr(hazard_result, 'analysis_result') and hasattr(hazard_result.analysis_result, 'scorer'):
+            baseline_scorer = hazard_result.analysis_result.scorer
+            scorer.p_min = baseline_scorer.p_min
+            scorer.p_max = baseline_scorer.p_max
+            logger.debug(
+                "Using baseline calibration: p_min=%.4f, p_max=%.4f",
+                scorer.p_min, scorer.p_max
+            )
+        else:
+            # Fallback: calibrate from baseline grid to ensure consistency
+            logger.warning(
+                "Baseline scorer not available; recalibrating from baseline grid raw probabilities"
+            )
+            try:
+                baseline_raw_probs = model.predict_proba(grid[available_feats].values)[:, -1]
+                scorer.calibrate(baseline_raw_probs)
+                logger.debug(
+                    "Recalibrated from baseline: p_min=%.4f, p_max=%.4f",
+                    scorer.p_min, scorer.p_max
+                )
+            except Exception as recal_exc:
+                logger.warning("Recalibration failed (%s); using default bounds", recal_exc)
+                scorer.p_min = 0.0
+                scorer.p_max = 1.0
+        
         thresholds = {"low_max": config.low_threshold, "medium_max": config.medium_threshold}
-        scenario_grid = scorer.score_grid(modified, model, available_feats, thresholds)
+        scenario_grid = scorer.score_grid(modified, model, available_feats, thresholds, 
+                                          use_provided_bounds=True)
     except Exception as exc:
         logger.warning("Scenario re-scoring failed (%s) — using original scores.", exc)
         scenario_grid = modified.copy()

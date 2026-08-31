@@ -83,10 +83,18 @@ class FloodRiskScorer:
         model,
         feature_columns: list[str],
         thresholds: dict[str, float] | None = None,
+        use_provided_bounds: bool = False,
     ) -> gpd.GeoDataFrame:
         """
         Run end-to-end scoring: predict → normalize → classify.
         Appends 'risk_score' and 'risk_class' columns to the grid.
+        
+        Parameters
+        ----------
+        use_provided_bounds : bool
+            If True, skip recalibration and use self.p_min/p_max as-is.
+            This is critical for scenario analysis to ensure consistent scoring
+            across baseline and scenario grids.
         """
         X = grid[feature_columns].values
         X_df = pd.DataFrame(X, columns=feature_columns)
@@ -94,7 +102,8 @@ class FloodRiskScorer:
         raw_probs = model.predict_proba(X_df)[:, -1]
 
         # Calibrate from this batch if not already calibrated
-        if self.p_max <= self.p_min:
+        # UNLESS use_provided_bounds=True (for scenario consistency)
+        if not use_provided_bounds and self.p_max <= self.p_min:
             self.calibrate(raw_probs)
 
         scores = self.normalize_scores(raw_probs)

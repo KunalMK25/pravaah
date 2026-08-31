@@ -331,6 +331,8 @@ def _nearest_km(
     
     Returns (-1.0, 'unavailable') if no points available.
     Uses routing if graph is available, otherwise falls back to haversine.
+    
+    OPTIMIZATION: Uses vectorized haversine calculation when many points exist.
     """
     if not points:
         return -1.0, "unavailable"
@@ -347,9 +349,24 @@ def _nearest_km(
         except Exception as e:
             logger.debug("Routing error: %s; using fallback", e)
     
-    # Fallback to haversine
-    distances = [_haversine_km(hab_lat, hab_lon, lat, lon) for lat, lon in points]
-    return round(min(distances), 3), "straight_line_fallback"
+    # Fallback to haversine (vectorized for performance)
+    if len(points) > 10:
+        # Vectorized calculation for many points
+        import numpy as np
+        lats = np.array([p[0] for p in points])
+        lons = np.array([p[1] for p in points])
+        dlat = np.radians(lats - hab_lat)
+        dlon = np.radians(lons - hab_lon)
+        a = np.sin(dlat/2)**2 + np.cos(np.radians(hab_lat)) * np.cos(np.radians(lats)) * np.sin(dlon/2)**2
+        c = 2 * np.arcsin(np.sqrt(a))
+        distances = 6371 * c
+        min_dist = float(np.min(distances))
+    else:
+        # Traditional loop for few points
+        distances = [_haversine_km(hab_lat, hab_lon, lat, lon) for lat, lon in points]
+        min_dist = min(distances)
+    
+    return round(min_dist, 3), "straight_line_fallback"
 
 
 def _compute_safe_area(
@@ -452,7 +469,9 @@ def assess_capacity(
     road_points : list of (lat, lon) tuples, optional
         Pre-loaded road points. If None, will be loaded.
     road_graph : networkx graph, optional
-        Pre-constructed road network graph. If None, will be built.
+        Pre-constructed road network graph. If None, will fall back to haversine distances.
+        The caller is responsible for deciding whether to build the graph based on performance
+        constraints (e.g., do not build for >500-node networks).
 
     Returns
     -------
@@ -474,18 +493,13 @@ def assess_capacity(
     if hc_points is None:
         hc_points = _load_healthcare(infra_bbox, cache_path, allow_network)
     
-    # 3. Roads (and build graph for routing)
+    # 3. Roads (load if not already provided)
     if road_points is None:
         road_points = _load_roads(infra_bbox, cache_path, allow_network)
     
-    # Only build routing graph if:
-    #   - Not already provided AND
-    #   - Road points exist AND
-    #   - Dataset is small enough (guard against O(N²) complexity)
-    # This matches the guard logic in sih_pipeline.py to prevent
-    # rebuilding large graphs that were intentionally disabled.
-    if road_graph is None and road_points:
-        road_graph = build_road_graph(road_points)
+    # Note: road_graph may be None intentionally to signal fallback to haversine for large networks.
+    # Do not rebuild it here; respect the caller's decision. If building is needed, it must be
+    # done by the caller with appropriate size checks (see sih_pipeline.py for >500-node guard).
 
     # 4. Calculate distances with routing
     nearest_hc_km, hc_method = _nearest_km(
