@@ -1,0 +1,5 @@
+{
+  "deploy": {
+    "aptPackages": ["...", "libexpat1", "libspatialindex-c6"]
+  }
+}
