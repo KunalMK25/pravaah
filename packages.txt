@@ -1,2 +1,3 @@
 libgdal-dev
 libspatialindex-dev
+libexpat1
