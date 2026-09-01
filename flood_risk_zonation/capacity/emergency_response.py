@@ -212,7 +212,7 @@ def compute_evacuation_routes(
         )
 
         # Populate habitation name
-        route.hab_name = rel_result.hab_name or exp_result.name or "Unnamed"
+        route.hab_name = rel_result.name or exp_result.name or "Unnamed"
 
         evacuation_routes.append(route)
 
