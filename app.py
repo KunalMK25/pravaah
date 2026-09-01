@@ -101,6 +101,10 @@ if enable_evacuation_routes:
     evacuation_priority_filter = st.sidebar.multiselect(
         "Route for priorities", ["CRITICAL", "HIGH", "MEDIUM"], default=["CRITICAL", "HIGH"]
     )
+    if evacuation_priority_filter:
+        st.sidebar.caption(f"ℹ️ Evacuation routes will be computed for {len(evacuation_priority_filter)} priority class(es)")
+    else:
+        st.sidebar.warning("⚠️ No priority classes selected for evacuation routes")
 
 _llm_provider = os.environ.get("PRAVAAH_LLM_PROVIDER","none").lower()
 _has_llm = ((_llm_provider=="openai" and bool(os.environ.get("OPENAI_API_KEY"))) or
@@ -358,6 +362,15 @@ with tab_map:
             shelters=emergency_facilities.get("shelters"),
             evacuation_routes=evacuation_routes_list if enable_evacuation_routes else None)
         st.components.v1.html(m._repr_html_(),height=630,scrolling=False)
+        
+        # Evacuation routes status feedback
+        if enable_evacuation_routes:
+            if evacuation_routes_list and len(evacuation_routes_list) > 0:
+                successful_routes = [r for r in evacuation_routes_list if r.status == "FOUND"]
+                st.info(f"🚨 **Evacuation Routes:** {len(successful_routes)} route(s) computed for {len(evacuation_priority_filter)} priority class(es)")
+            elif evacuation_priority_filter:
+                st.warning("⚠️ **Evacuation Routes:** No evacuation routes are available for the selected priority classes. This may occur if no habitations match the selected priorities or if routing failed for all candidates.")
+        
         if zg is not None:
             c1,c2,c3,c4=st.columns(4)
             c1.markdown("\U0001f7e5 **RED** — Primary Hazard"); c2.markdown("\U0001f7e8 **YELLOW** — Secondary Attention")
@@ -554,7 +567,9 @@ with tab_reloc:
             zone=full_result.habitation_zones.get(rel.hab_id,"—") if full_result else "—"
             pop=f"{rel.population_exposed:,}" if rel.population_source=="osm_tag" and rel.population_exposed else "UNKNOWN"
             nc=len(full_result.relocation_candidates.get(rel.hab_id,[])) if full_result else 0
+            horizon_display=rel.time_horizon.replace("-","‐") if rel.time_horizon else "—"
             tr.append({"Rank":rank,"Priority":rel.priority_class,"Zone":zone,"Name":rel.name or "Unnamed",
+                "Action Timeline":horizon_display,
                 "Score":round(rel.relocation_score,3),"Hazard":round(rel.hazard_score,1),
                 "Vuln.":round(rel.vulnerability_score,3),"Cap.Stress":round(1-rel.capacity_score,3),
                 "Pop.":pop,"Candidates":nc})
@@ -563,6 +578,14 @@ with tab_reloc:
                 bg={"CRITICAL":"background-color:#fdecea","HIGH":"background-color:#fef5e7","MEDIUM":"background-color:#fef9e7","LOW":"background-color:#eafaf1"}
                 return [bg.get(row["Priority"],"")] * len(row)
             st.dataframe(pd.DataFrame(tr).style.apply(_hp,axis=1),use_container_width=True,hide_index=True)
+            st.markdown("---")
+            st.subheader("ℹ️ Action Timeline Explanations")
+            with st.expander("View time horizon details for each habitation"):
+                for rel in rel_list:
+                    if rel.time_horizon_explanation:
+                        horizon_icon={"SHORT-TERM":"⚡","MEDIUM-TERM":"⏰","LONG-TERM":"📅"}.get(rel.time_horizon,"❓")
+                        st.markdown(f"**{horizon_icon} {rel.name or 'Unnamed'}** ({rel.priority_class}): {rel.time_horizon}")
+                        st.caption(rel.time_horizon_explanation)
     elif result is not None: st.info("Enable Habitation Analysis.")
     else: st.info("Run the analysis first.")
 
@@ -892,6 +915,7 @@ with tab_data:
                         "relocation_score":rel.relocation_score,"priority_class":rel.priority_class,
                         "population_exposed":rel.population_exposed or "UNKNOWN","population_source":rel.population_source,
                         "recommended_action":rel.recommended_action,"contributing_factors":" | ".join(rel.contributing_factors),
+                        "time_horizon":rel.time_horizon,"time_horizon_explanation":rel.time_horizon_explanation,
                         "num_candidates":len(full_result.relocation_candidates.get(rel.hab_id,[])) if full_result else 0})
                 hc=io.StringIO(); pd.DataFrame(re).to_csv(hc,index=False)
                 st.download_button("⬇️ Relocation CSV",hc.getvalue(),file_name="PRAVAAH-AI_Relocation_Priority.csv",mime="text/csv")
