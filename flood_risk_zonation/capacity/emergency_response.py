@@ -156,7 +156,7 @@ def compute_evacuation_routes(
         logger.warning("No relocation results; no evacuation routes to compute")
         return []
 
-    if not zoned_grid or "spatial_zone" not in zoned_grid.columns:
+    if zoned_grid is None or len(zoned_grid) == 0 or "spatial_zone" not in zoned_grid.columns:
         logger.warning("No zoned grid; evacuation routes will use fallback hazard exposure")
 
     # Build hazard-weighted graph if road graph is available

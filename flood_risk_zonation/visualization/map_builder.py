@@ -8,6 +8,7 @@ import logging
 import folium
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 
 from flood_risk_zonation.visualization.explainability import build_cell_explanation
 from flood_risk_zonation.visualization.layers import (
@@ -148,8 +149,9 @@ class FloodRiskMapBuilder:
         - All risk classes get a popup (visible on click).
         - Water cells show a water-specific explanation (no factor bars).
         - Coastal cells show the ⚠️ Tsunami Risk badge.
-        - Capped at _MAX_EXPLAINABLE_CELLS total (prioritises High-risk cells,
-          then others) to keep page load times acceptable.
+        - Capped at _MAX_EXPLAINABLE_CELLS total across ALL zones.
+        - Allocates cells proportionally across risk classes to ensure
+          interaction works for RED, YELLOW, GREEN, and WATER zones.
 
         Parameters
         ----------
@@ -160,13 +162,26 @@ class FloodRiskMapBuilder:
         """
         fg = folium.FeatureGroup(name="Cell Info (hover/click)", show=True)
 
-        # Prioritise cells for display: High first, then Water, Medium, Low
-        priority_order = {"High": 0, "Water": 1, "Medium": 2, "Low": 3}
-        grid_sorted = grid.copy()
-        grid_sorted["_priority"] = grid_sorted["risk_class"].map(
-            lambda c: priority_order.get(str(c), 9)
-        )
-        grid_sorted = grid_sorted.sort_values("_priority").head(_MAX_EXPLAINABLE_CELLS)
+        # Distribute interactive cells proportionally across risk classes.
+        # This ensures every zone type (RED, YELLOW, GREEN, WATER) has some
+        # interactive cells, not just HIGH-risk (RED) cells.
+        grid_to_render = []
+        risk_classes = ["High", "Medium", "Low", "Water"]
+        
+        for risk_class in risk_classes:
+            subset = grid[grid["risk_class"] == risk_class]
+            if len(subset) > 0:
+                # Allocate a proportional share of _MAX_EXPLAINABLE_CELLS
+                proportion = len(subset) / len(grid)
+                cells_for_class = max(1, int(proportion * _MAX_EXPLAINABLE_CELLS))
+                grid_to_render.append(subset.head(cells_for_class))
+        
+        # Combine all subsets and take top _MAX_EXPLAINABLE_CELLS total
+        if grid_to_render:
+            grid_sorted = gpd.GeoDataFrame(pd.concat(grid_to_render, ignore_index=True))
+            grid_sorted = grid_sorted.head(_MAX_EXPLAINABLE_CELLS)
+        else:
+            grid_sorted = grid.head(0)
 
         for _, row in grid_sorted.iterrows():
             try:
