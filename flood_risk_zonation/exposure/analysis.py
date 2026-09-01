@@ -237,9 +237,23 @@ def analyse_exposure(
             logger.warning("Exposure analysis failed for %s: %s", hab.hab_id, exc)
             continue
 
-    logger.info(
-        "Exposure analysis: %d habitations, %d in red zone.",
-        len(results),
-        sum(1 for r in results if r.is_in_red_zone),
-    )
-    return results
+    # Filter out water-cell habitations: they cannot have land-based analysis.
+    # A habitation with hazard_class="Water" means all nearby grid cells are water.
+    # Such habitations must not participate in relocation scoring or UI reporting.
+    land_habitations = [r for r in results if r.hazard_class != "Water"]
+    
+    n_water = len(results) - len(land_habitations)
+    if n_water > 0:
+        logger.info(
+            "Exposure analysis: %d habitations total, %d land-based, %d water-cell (filtered).",
+            len(results),
+            len(land_habitations),
+            n_water,
+        )
+    else:
+        logger.info(
+            "Exposure analysis: %d habitations, %d in red zone.",
+            len(land_habitations),
+            sum(1 for r in land_habitations if r.is_in_red_zone),
+        )
+    return land_habitations
