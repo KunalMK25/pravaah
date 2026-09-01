@@ -277,12 +277,9 @@ if run_button:
                 st.warning('?? The predictive analysis below is for reference only. Current flooding is an active situation that requires immediate official emergency response.', icon='??')
                 st.markdown('---')
         
-        # Summary alert
+        # Summary — analysis complete
         if sih_result:
-            nc=len(sih_result.critical_habitations); nh=sum(1 for r in sih_result.relocation_results if r.priority_class=="HIGH")
-            if nc>0: st.error(f"\U0001f6a8 **{nc} CRITICAL** habitation(s) — see Relocation Priority tab.", icon="\U0001f6a8")
-            elif nh>0: st.warning(f"⚠️ **{nh} HIGH priority** habitation(s).", icon="⚠️")
-            else: st.success(f"✅ {result.cell_count} cells · {result.pipeline_duration_seconds:.1f}s · Tier {result.data_tier} · {len(sih_result.habitation_dataset.habitations)} habitations")
+            st.success(f"✅ {result.cell_count} cells · {result.pipeline_duration_seconds:.1f}s · Tier {result.data_tier} · {len(sih_result.habitation_dataset.habitations)} habitations")
         else: st.success(f"✅ {result.cell_count} cells · {result.pipeline_duration_seconds:.1f}s · Tier {result.data_tier}")
     except FloodRiskError as exc: st.error(f"Analysis error: {exc}")
     except Exception as exc: st.error(f"Unexpected error: {exc}"); logger.exception("Unhandled")
