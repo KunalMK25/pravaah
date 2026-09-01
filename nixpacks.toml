@@ -1,0 +1,7 @@
+[phases.setup]
+# System packages required for geospatial processing
+# - libexpat1: Required by Rasterio for XML parsing (libexpat.so.1)
+# - libspatialindex-c6: Spatial indexing library for Shapely/GeoPandas runtime
+# Note: libgdal is bundled in the rasterio wheel, but libexpat1 is not included
+# in slim Python images and must be installed separately
+aptPkgs = ["libexpat1", "libspatialindex-c6"]
