@@ -151,6 +151,21 @@ def run_scenario(
         thresholds = {"low_max": config.low_threshold, "medium_max": config.medium_threshold}
         scenario_grid = scorer.score_grid(modified, model, available_feats, thresholds, 
                                           use_provided_bounds=True)
+        
+        # CRITICAL PRESERVATION: Permanent WATER cells must remain WATER
+        # A cell is permanent water if it was marked as Water in the baseline.
+        # Scenario parameter changes (rainfall, drainage, etc.) should not reclassify
+        # permanent water bodies as land-based risk classes.
+        # This preserves the scientific integrity: water body extent is independent of
+        # temporary rainfall scenarios.
+        water_mask = grid["risk_class"] == "Water"
+        scenario_grid.loc[water_mask, "risk_class"] = "Water"
+        scenario_grid.loc[water_mask, "risk_score"] = 0.0
+        
+        logger.info(
+            "Scenario grid prepared: %d cells rescored, %d permanent WATER cells preserved",
+            len(scenario_grid), water_mask.sum()
+        )
     except Exception as exc:
         logger.warning("Scenario re-scoring failed (%s) — using original scores.", exc)
         scenario_grid = modified.copy()
