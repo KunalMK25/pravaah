@@ -9,7 +9,7 @@
 [![Tests](https://github.com/KunalMK25/pravaah/actions/workflows/test.yml/badge.svg)](https://github.com/KunalMK25/pravaah/actions/workflows/test.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Tests](https://img.shields.io/badge/tests-538%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-808%20passing-brightgreen)
 
 **PRAVAAH-AI** is an AI-powered geospatial decision-support system that identifies hazard-based red zones, evaluates vulnerable habitations, assesses exposure and carrying-capacity stress, and prioritises intervention or relocation using explainable spatial intelligence.
 
@@ -95,6 +95,11 @@ Explainable Recommendations → Authority Dashboard → PDF Report
 | Weather | OpenWeatherMap | `LIVE` / `CACHED` / `UNAVAILABLE` |
 | Population | OSM `population` tag only | `osm_tag` / `UNKNOWN` |
 
+### Water Preservation & Proximity Boost
+
+- **Water Preservation:** All cells classified as WATER (permanent water bodies) in the baseline hazard grid are preserved exactly as WATER through all scenario simulations. Scenario rainfall and drainage adjustments do not reclassify permanent water; only LAND cells are subject to reclassification based on updated risk scores.
+- **Proximity Boost:** Habitation cells receive a proximity-based boost to their risk scores during baseline grid generation, prioritising hazard identification near concentrations of known habitations. The boost is applied uniformly to the baseline; scenarios preserve the boosted baseline (via water preservation) and apply relative adjustments only to LAND cells.
+
 ### Spatial Zone System
 
 | Zone | Definition | Source |
@@ -151,7 +156,22 @@ PRAVAAH-AI is explicit about data quality at every stage:
 
 ---
 
-## Setup & Running
+## Preset Regions
+
+PRAVAAH-AI includes 6 preset study areas with pre-cached offline data (5 regions) and live-only capability (Puri):
+
+| Region | Geography | Bounding Box | Offline Data | Typical Use |
+|--------|-----------|--------------|--------------|-------------|
+| **Gottigere, Bangalore** | Inland urban, South India | 12.84°–12.91°N, 77.55°–77.62°E | ✓ Available | Urban flood risk, drainage adequacy |
+| **Chennai Marina** | Coastal urban, Tamil Nadu | 12.98°–13.05°N, 80.24°–80.31°E | ✓ Available | Cyclone / storm surge exposure |
+| **Dal Lake, Srinagar** | Alpine lake, Jammu & Kashmir | 34.07°–34.14°N, 74.83°–74.90°E | ✓ Available | High-altitude hydrology, overflow risk |
+| **Puri, Odisha** | Cyclone coast, Odisha | 19.77°–19.84°N, 85.80°–85.87°E | ✗ Live-only | Tropical cyclone hazard zone |
+| **Indian Hilly Region** | Foothills / mountainous, Himalayas | 27.45°–27.55°N, 88.45°–88.55°E | ✓ Available | Landslide, cloud-burst, steep terrain |
+| **Indian Ocean** | Open water reference zone | 9.95°–10.05°N, 71.95°–72.05°E | ✓ Available | Water-only validation, reference hazard |
+
+**Note:** Offline-available regions can be analysed without internet connectivity; Puri requires live OSM/weather data. Custom bounding boxes can be defined in the app.
+
+---
 
 ### Install dependencies
 
@@ -176,7 +196,7 @@ cp .env.example .env
 
 ```bash
 python -m pytest tests/ -q --no-cov
-# Expected: 538 passed, 0 failed
+# Expected: 808 passed, 0 failed
 ```
 
 ---
@@ -250,13 +270,15 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment instructions.
 
 ## Known Limitations
 
-1. Municipal hydraulic capacity measurements are unavailable; the system uses mapped OSM drainage infrastructure (drain, canal, stream, and river linestrings) as a spatial drainage proxy. Dense nearby infrastructure → higher proxy score; absent infrastructure → synthetic fallback (population-inverse heuristic). Provenance is reported in `data_provenance["drainage"]`: `"osm_proxy"` or `"synthetic_fallback"`
-2. Population from OSM is sparse for many Indian settlements — many show UNKNOWN
-3. **Road and healthcare accessibility distances** — Routing-aware network distances are calculated where OSM road network data is available and the network is ≤500 nodes. The system builds an undirected road network graph from OSM Overpass queries and computes shortest-path distances between habitations and road/healthcare targets. For networks exceeding 500 nodes, or when network data is unavailable or disconnected, the system gracefully falls back to straight-line (Haversine) geodesic distance to maintain performance and reliability. Provenance is explicitly tracked in capacity assessment notes: `"network_routing"` or `"straight_line_fallback"`. Limitations: road network may be incomplete in remote areas, healthcare facilities are matched to nearest road node (not routed individually), and routing uses a simplified undirected graph (no one-way or turn restrictions).
-4. Weather data is sourced from OpenWeatherMap; the flood-risk forecast is a rainfall-adjusted estimate — not a physically-based hydrological simulation
-5. Historical validation uses coarse approximate polygons (~1 km accuracy)
-6. Habitation detection combines three OSM layers — named settlement place nodes, residential building footprints (strict allowlist: house/residential/apartments/detached/semidetached_house/terrace/bungalow/dormitory/hut/cabin), and residential landuse polygons — fetched in a single cached Overpass request. Building centroids within ~50 m of a place node are deduplicated. Non-residential buildings (industrial, warehouse, commercial, schools, hospitals, etc.) are excluded. Per-record provenance is `"osm_overpass"` / `"osm_building"` / `"osm_landuse"` / `"fallback"`. Coverage remains dependent on the completeness of OpenStreetMap mapping in the selected study area.
-7. Sentinel-1 satellite integration: architecture hook exists, not yet automated
+1. **Drainage infrastructure:** Municipal hydraulic capacity measurements are unavailable; the system uses mapped OSM drainage infrastructure (drain, canal, stream, and river linestrings) as a **spatial proxy**, not a hydraulic model. Dense nearby infrastructure → higher proxy score; absent infrastructure → synthetic fallback (population-inverse heuristic). Proximity scores are inverse-distance weighted; drain/canal density is clipped intersection length within 2× grid cell radius. Provenance is reported in `data_provenance["drainage"]`: `"osm_proxy"` or `"synthetic_fallback"`.
+2. **Population data:** Population from OSM is sparse for many Indian settlements — many show UNKNOWN. No authoritative raster (WorldPop, Census) is currently integrated.
+3. **Road and healthcare accessibility distances:** Routing-aware network distances are calculated where OSM road network data is available and the network is ≤500 nodes. The system builds an undirected road network graph from OSM Overpass queries and computes shortest-path distances between habitations and road/healthcare targets. For networks exceeding 500 nodes, or when network data is unavailable or disconnected, the system gracefully falls back to straight-line (Haversine) geodesic distance to maintain performance and reliability. Provenance is explicitly tracked in capacity assessment notes: `"network_routing"` or `"straight_line_fallback"`. Limitations: road network may be incomplete in remote areas, healthcare facilities are matched to nearest road node (not routed individually), and routing uses a simplified undirected graph (no one-way or turn restrictions).
+4. **Weather data and forecasts:** Weather data is sourced from OpenWeatherMap; the flood-risk forecast is a rainfall-adjusted estimate — **not a physically-based hydrological simulation**. Forecasts are always labelled **ESTIMATE**.
+5. **Historical validation:** Historical flood extent validation uses coarse approximate polygons (~1 km accuracy) and is independent of the ML training signal.
+6. **Habitation detection:** Combines three OSM layers — named settlement place nodes, residential building footprints (strict allowlist: house/residential/apartments/detached/semidetached_house/terrace/bungalow/dormitory/hut/cabin), and residential landuse polygons — fetched in a single cached Overpass request. Building centroids within ~50 m of a place node are deduplicated. Non-residential buildings (industrial, warehouse, commercial, schools, hospitals, etc.) are excluded. Per-record provenance is `"osm_overpass"` / `"osm_building"` / `"osm_landuse"` / `"fallback"`. Coverage remains dependent on the completeness of OpenStreetMap mapping in the selected study area.
+7. **Sentinel-1 satellite integration:** Architecture hook exists, not yet automated.
+8. **Water preservation:** Permanent water cells (WATER class) are preserved exactly through all scenario simulations; only LAND cells are subject to reclassification.
+9. **Scenario simulation:** All scenarios are labelled **SIMULATION** — baseline grid is never overwritten. Scenarios explore rainfall and drainage sensitivity only; other factors (elevation, habitations, etc.) remain constant.
 
 ---
 
