@@ -37,6 +37,7 @@ def add_risk_choropleth_layer(folium_map: folium.Map, scored_grid: gpd.GeoDataFr
                 "weight": 0.3,
                 "fillOpacity": 0.6,
             },
+            interactive=False,
         ).add_to(fg)
     fg.add_to(folium_map)
     return folium_map
@@ -132,6 +133,7 @@ def add_water_bodies_layer(folium_map: folium.Map, water_bodies: gpd.GeoDataFram
         style_function=lambda _: {
             "fillColor": "#3498db", "color": "#2980b9", "weight": 1, "fillOpacity": 0.5,
         },
+        interactive=False,
     ).add_to(fg)
     fg.add_to(folium_map)
     return folium_map
@@ -283,6 +285,7 @@ def add_red_zone_layer(
             "weight": 1.5,
             "fillOpacity": 0.55,
         },
+        interactive=False,
     ).add_to(fg)
     fg.add_to(folium_map)
     return folium_map
@@ -362,6 +365,7 @@ def add_spatial_zone_layer(
                 "weight":      0.8,
                 "fillOpacity": 0.45 if zone == "GREEN" else 0.55,
             },
+            interactive=False,
         ).add_to(fg)
         fg.add_to(folium_map)
 
