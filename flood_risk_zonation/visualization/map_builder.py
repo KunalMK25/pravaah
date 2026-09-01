@@ -162,9 +162,10 @@ class FloodRiskMapBuilder:
         """
         fg = folium.FeatureGroup(name="Cell Info (hover/click)", show=True)
 
-        # Distribute interactive cells proportionally across risk classes.
-        # This ensures every zone type (RED, YELLOW, GREEN, WATER) has some
-        # interactive cells, not just HIGH-risk (RED) cells.
+        # Distribute interactive cells proportionally across risk classes,
+        # while ensuring spatial coverage across the entire grid (top, middle, bottom).
+        # This prevents cells from being selected contiguously (which would bias
+        # toward lower latitudes due to grid generation order).
         grid_to_render = []
         risk_classes = ["High", "Medium", "Low", "Water"]
         
@@ -174,7 +175,21 @@ class FloodRiskMapBuilder:
                 # Allocate a proportional share of _MAX_EXPLAINABLE_CELLS
                 proportion = len(subset) / len(grid)
                 cells_for_class = max(1, int(proportion * _MAX_EXPLAINABLE_CELLS))
-                grid_to_render.append(subset.head(cells_for_class))
+                
+                # Sample cells uniformly across spatial extent to ensure both
+                # top and bottom cells are represented (not just leading cells).
+                # Reset index to get integer positions, then sample evenly.
+                subset_reset = subset.reset_index(drop=True)
+                n_cells = len(subset_reset)
+                if n_cells <= cells_for_class:
+                    sampled = subset_reset
+                else:
+                    # Sample uniformly: create evenly-spaced indices across the subset
+                    step = n_cells / cells_for_class
+                    indices = [int(i * step) for i in range(cells_for_class)]
+                    sampled = subset_reset.iloc[indices]
+                
+                grid_to_render.append(sampled)
         
         # Combine all subsets and take top _MAX_EXPLAINABLE_CELLS total
         if grid_to_render:
