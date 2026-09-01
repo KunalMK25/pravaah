@@ -162,6 +162,45 @@ def run_scenario(
         scenario_grid.loc[water_mask, "risk_class"] = "Water"
         scenario_grid.loc[water_mask, "risk_score"] = 0.0
         
+        # CRITICAL FIX: Apply proximity boost to scenario
+        # The baseline grid was post-processed with water masking and proximity boost.
+        # Scenarios must apply the SAME proximity boost (same water bodies, same distances)
+        # for fair comparison. Otherwise scenarios artificially appear lower-risk.
+        #
+        # Solution: The proximity boost depends only on distance to water bodies (which don't change),
+        # not on model probabilities. We can safely apply the baseline's proximity boost to scenario cells,
+        # as long as we respect cell-by-cell distance calculations.
+        #
+        # Implementation: For each cell, apply the maximum of:
+        #  1. Cell's raw scenario risk score
+        #  2. Proximity boost strength (based on distance to water bodies, same as baseline)
+        # This preserves the "boost can only increase, never decrease" semantics.
+        try:
+            if "water_proximity_score" in grid.columns:
+                # Baseline has proximity boost information
+                logger.debug("Applying water proximity boost to scenario grid...")
+                
+                for idx in range(len(scenario_grid)):
+                    baseline_prox_score = float(grid["water_proximity_score"].iloc[idx])
+                    
+                    if baseline_prox_score > 0:
+                        # Cell was boosted in baseline; apply same boost to scenario
+                        current_scenario_score = float(scenario_grid["risk_score"].iloc[idx])
+                        boosted_scenario_score = max(current_scenario_score, baseline_prox_score)
+                        
+                        scenario_grid.iloc[idx, scenario_grid.columns.get_loc("risk_score")] = boosted_scenario_score
+                        
+                        # Re-classify if boost changed the class
+                        if boosted_scenario_score > config.medium_threshold:
+                            scenario_grid.iloc[idx, scenario_grid.columns.get_loc("risk_class")] = "High"
+                        elif boosted_scenario_score > config.low_threshold:
+                            scenario_grid.iloc[idx, scenario_grid.columns.get_loc("risk_class")] = "Medium"
+                        # else: no class change needed
+                
+                logger.info("Water proximity boost applied to scenario grid")
+        except Exception as boost_exc:
+            logger.warning("Applying proximity boost to scenario failed: %s", boost_exc)
+        
         logger.info(
             "Scenario grid prepared: %d cells rescored, %d permanent WATER cells preserved",
             len(scenario_grid), water_mask.sum()
