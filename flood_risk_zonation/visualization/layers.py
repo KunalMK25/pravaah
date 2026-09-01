@@ -95,6 +95,7 @@ def add_drainage_lines_layer(folium_map: folium.Map, drainage_path: str | None =
             folium.GeoJson(
                 feature,
                 style_function=lambda _, c=color, w=weight: {"color": c, "weight": w, "opacity": 0.85},
+                interactive=False,
             ).add_to(fg)
         fg.add_to(folium_map)
     except Exception as e:
@@ -115,6 +116,7 @@ def add_population_density_layer(folium_map: folium.Map, scored_grid: gpd.GeoDat
         folium.GeoJson(
             row.geometry.__geo_interface__,
             style_function=lambda _, c=color: {"fillColor": c, "color": "none", "fillOpacity": 0.4},
+            interactive=False,
         ).add_to(fg)
     fg.add_to(folium_map)
     return folium_map
