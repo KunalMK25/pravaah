@@ -728,7 +728,7 @@ with tab_scenarios:
                 if sr.delta_critical!=0:
                     st.metric("CRITICAL habitation change",f"{sr.scenario_critical}",delta=f"{sr.delta_critical:+d}",delta_color="inverse")
                 if sr.habitations_escalated:
-                    st.warning(f"⚠️ {len(sr.habitations_escalated)} habitation(s) escalated to higher priority under this scenario.")
+                    st.warning(f"⚠️ Scenario impact: {len(sr.habitations_escalated)} habitation(s) received a higher simulated priority under this scenario.")
         with tab_custom:
             st.markdown("Define custom parameters:")
             c1,c2=st.columns(2)

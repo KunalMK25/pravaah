@@ -289,23 +289,39 @@ def run_scenario(
 
     # ── Build narrative ────────────────────────────────────────────────────────
     delta_red  = delta_zones.get(ZONE_RED, 0)
+    delta_yellow = delta_zones.get(ZONE_YELLOW, 0)
+    delta_green = delta_zones.get(ZONE_GREEN, 0)
+    delta_water = delta_zones.get(ZONE_WATER, 0)
     delta_crit = scenario_critical - baseline_critical
+    
     parts = [f"Scenario: {params.label}."]
+    
+    # Describe simulated zone classification changes
     if params.rainfall_multiplier != 1.0:
         parts.append(f"Rainfall ×{params.rainfall_multiplier:.1f}" +
                      (f" + {params.extra_rainfall_mm:.0f} mm" if params.extra_rainfall_mm > 0 else "") + ".")
-    if delta_red > 0:
-        parts.append(f"RED zone cells increased by {delta_red:+d}.")
-    elif delta_red < 0:
-        parts.append(f"RED zone cells decreased by {abs(delta_red)}.")
+    
+    # Use explicit "classification change" language to indicate these are model-derived
+    zone_changes = []
+    if delta_red != 0:
+        zone_changes.append(f"RED {delta_red:+d}")
+    if delta_yellow != 0:
+        zone_changes.append(f"YELLOW {delta_yellow:+d}")
+    if delta_green != 0:
+        zone_changes.append(f"GREEN {delta_green:+d}")
+    if zone_changes:
+        parts.append(f"Simulated classification change: {', '.join(zone_changes)} cells.")
     else:
-        parts.append("No change in RED zone cell count.")
+        parts.append("No simulated classification change in zone cells.")
+    
+    # Habitation priority language
     if delta_crit > 0:
-        parts.append(f"{delta_crit} additional CRITICAL habitation(s) under this scenario.")
+        parts.append(f"{delta_crit} additional habitation(s) received a CRITICAL priority in this scenario.")
     elif delta_crit < 0:
-        parts.append(f"{abs(delta_crit)} fewer CRITICAL habitation(s) under this scenario.")
+        parts.append(f"{abs(delta_crit)} fewer habitation(s) received CRITICAL priority in this scenario.")
     if escalated_habs:
-        parts.append(f"{len(escalated_habs)} habitation(s) escalated to higher priority.")
+        parts.append(f"Scenario impact: {len(escalated_habs)} habitation(s) received a higher simulated priority.")
+    
     parts.append("SIMULATION — not a forecast or observation.")
     narrative = " ".join(parts)
 

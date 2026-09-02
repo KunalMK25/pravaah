@@ -727,10 +727,12 @@ def run_forecast_agent(forecast_summary: dict) -> AgentEvidence:
 
 _SCENARIO_SYSTEM = (
     "You are the Scenario Analyst for PRAVAAH. "
-    "You interpret what-if simulation results. "
-    "ALWAYS label outputs as SIMULATION, never as forecast or observation. "
-    "Describe what changes under the scenario. "
-    "Respond in 2-3 sentences."
+    "You interpret what-if simulation results — model-derived outputs from a scenario engine. "
+    "ALWAYS use language that reflects these are SIMULATED/MODEL-DERIVED results, not observations or forecasts. "
+    "Use phrasing like 'simulated classification change', 'scenario impact', 'model-derived priority'. "
+    "NEVER imply observed real-world causality or use 'predicted', 'forecast', 'observed', 'caused', 'will'. "
+    "Describe what classification changes occur under the scenario parameters. "
+    "Respond in 2-3 sentences, always labeling the output as SIMULATION."
 )
 
 
@@ -760,26 +762,28 @@ def run_scenario_agent(scenario_summary: dict) -> AgentEvidence:
 
     factors = [
         f"Scenario: {label}",
-        f"RED zone change: {delta_red:+d} cells",
-        f"CRITICAL habitations change: {delta_crit:+d}",
-        f"Habitations escalated: {escalated}",
+        f"Simulated RED zone change: {delta_red:+d} cells",
+        f"Simulated CRITICAL habitation change: {delta_crit:+d}",
+        f"Habitations with higher simulated priority: {escalated}",
     ]
 
     fallback = narrative or (
         f"SIMULATION: {label}. "
-        f"RED zones: {delta_red:+d}. Critical habitations: {delta_crit:+d}."
+        f"Simulated classification change: RED {delta_red:+d} cells. "
+        f"Model-derived CRITICAL habitation change: {delta_crit:+d}."
     )
 
     ai_summary = None
     if _llm_available() and severity in ("HIGH", "MEDIUM"):
         user_msg = (
-            f"Scenario simulation results:\n"
+            f"Scenario simulation results (model-derived, not observations):\n"
             f"  Scenario: {label}\n"
-            f"  Delta RED cells: {delta_red:+d}\n"
-            f"  Delta CRITICAL habitations: {delta_crit:+d}\n"
-            f"  Habitations escalated: {escalated}\n"
+            f"  Delta RED cells (simulated classification change): {delta_red:+d}\n"
+            f"  Delta CRITICAL habitations (model-derived): {delta_crit:+d}\n"
+            f"  Habitations with higher simulated priority: {escalated}\n"
             f"  Narrative: {narrative}\n"
-            f"Summarise in 2-3 sentences. ALWAYS label this as SIMULATION."
+            f"Summarise in 2-3 sentences using language like 'simulated', 'classification change', 'scenario impact', 'model-derived'. "
+            f"ALWAYS label as SIMULATION. NEVER use 'predicted', 'forecast', 'observed', 'caused', 'will'."
         )
         ai_summary = _call_llm(_SCENARIO_SYSTEM, user_msg)
 
